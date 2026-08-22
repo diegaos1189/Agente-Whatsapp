@@ -19,6 +19,7 @@ import {
 import { classifyIntent } from "../ai/intentClassifier.js";
 import { extractEntities, EMPTY_ENTITIES, type ExtractedEntities } from "../ai/entityExtractor.js";
 import { generateResponse } from "../ai/responseGenerator.js";
+import { SAFE_FALLBACK_MESSAGE } from "../ai/guardrails.js";
 import { transcribeAudio, describeImage } from "../ai/aiClient.js";
 import { getWhatsAppClient } from "../whatsapp/whatsappClient.js";
 import type { DownloadedMedia } from "../whatsapp/whatsappClient.js";
@@ -1343,7 +1344,13 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
         tone: settings.assistantTone,
         allowGreeting: true,
       });
-      message = `${greeting}\n\n1. Ver el estado de mi pedido\n2. Hacer un nuevo pedido\n3. Ver el menu\n4. Otra cosa (escribeme libremente)`;
+      // Si el guardrail reemplazo el saludo por el mensaje de error generico (ej: el modelo
+      // menciono algun numero que se confundio con un monto), no lo pegamos con el menu
+      // numerado — se veria como un error pegado a la respuesta. Se usa un saludo fijo,
+      // siempre seguro, en su lugar.
+      const greetingLine =
+        greeting === SAFE_FALLBACK_MESSAGE ? `¡Hola ${contact.name}! Bienvenido de nuevo a ${settings.restaurantName}.` : greeting;
+      message = `${greetingLine}\n\n1. Ver el estado de mi pedido\n2. Hacer un nuevo pedido\n3. Ver el menu\n4. Otra cosa (escribeme libremente)`;
       pendingMenu = "RETURNING";
     } else if (settings.welcomeMessage.trim()) {
       // Si el negocio escribio su propio mensaje de bienvenida, se usa TAL CUAL (control

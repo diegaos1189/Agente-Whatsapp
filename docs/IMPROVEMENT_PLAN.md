@@ -2,10 +2,21 @@
 
 Fecha del plan: August 21, 2026
 
-## BUG CONOCIDO #2 — respuesta con saludo de "cliente recurrente" concatenada al fallback de guardrail (reportado 2026-08-22)
+## BUG CONOCIDO #2 — respuesta con saludo de "cliente recurrente" concatenada al fallback de guardrail (RESUELTO 2026-08-22)
 
-Estado: ABIERTO. Diagnosticado por Claude (sesion paralela), no arreglado — se evita tocar
-`conversationService.ts` en paralelo mientras Codex sigue trabajando ahi.
+Estado: RESUELTO por Claude (sesion paralela). Fix minimo, sin tocar `responseGenerator.ts`:
+en `conversationService.ts` (rama de saludo para cliente recurrente), si `greeting ===
+SAFE_FALLBACK_MESSAGE` se usa un saludo fijo y siempre seguro (`¡Hola {nombre}! Bienvenido de
+nuevo a {negocio}.`) en vez de pegar el mensaje de error con el menu numerado. El menu
+numerado (deterministico, nunca pasa por guardrail) sigue mostrandose siempre. 304/304 tests
+pasando, typecheck limpio, desplegado a produccion.
+
+El bug relacionado en `buildMenuReply` (mas abajo) y la limpieza de `handleTextMessageLegacy`
+siguen abiertos — no se tocaron en este fix.
+
+---
+
+Diagnostico original (para referencia):
 
 Sintoma (reproducido en produccion, screenshot real de WhatsApp): cliente recurrente (ya
 tiene pedidos previos y nombre guardado) manda "hola" y el bot responde en una sola burbuja:
