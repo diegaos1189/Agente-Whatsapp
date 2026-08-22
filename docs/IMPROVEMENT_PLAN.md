@@ -2,10 +2,83 @@
 
 Fecha del plan: August 21, 2026
 
-## BUG CONOCIDO — pendiente de diagnostico por Codex (reportado 2026-08-22)
+## BUG CONOCIDO #2 — respuesta con saludo de "cliente recurrente" concatenada al fallback de guardrail (reportado 2026-08-22)
 
-Estado: ABIERTO. Diagnosticado por Claude (sesion paralela), no arreglado — el sistema de
-cola/lease es de Codex y esta en desarrollo activo, se evita tocarlo en paralelo.
+Estado: ABIERTO. Diagnosticado por Claude (sesion paralela), no arreglado — se evita tocar
+`conversationService.ts` en paralelo mientras Codex sigue trabajando ahi.
+
+Sintoma (reproducido en produccion, screenshot real de WhatsApp): cliente recurrente (ya
+tiene pedidos previos y nombre guardado) manda "hola" y el bot responde en una sola burbuja:
+
+```
+Disculpa, no logre confirmar ese dato con certeza. ¿Me lo repites de otra forma? Si
+prefieres, escribe *asesor* y te atiende una persona del equipo.
+
+1. Ver el estado de mi pedido
+2. Hacer un nuevo pedido
+3. Ver el menu
+4. Otra cosa (escribeme libremente)
+```
+
+Causa raiz CONFIRMADA — `apps/api/src/modules/conversation/conversationService.ts:1330-1347`
+(rama de saludo para cliente recurrente, dentro de `handleTextMessage`'s flujo de sesion nueva):
+
+```ts
+const greeting = await generateResponse({
+  facts: [
+    `El cliente se llama ${contact.name} y ya nos ha pedido antes.`,
+    `Su ultimo pedido (${lastOrder.code}) quedo en estado: ${statusLabel}.`,
+  ],
+  askNext: null,
+  businessName: settings.restaurantName,
+  tone: settings.assistantTone,
+  allowGreeting: true,
+});
+message = `${greeting}\n\n1. Ver el estado de mi pedido\n2. Hacer un nuevo pedido\n3. Ver el menu\n4. Otra cosa (escribeme libremente)`;
+```
+
+`facts` aqui NO contiene ningun monto de dinero (solo nombre, codigo de pedido y estado), asi
+que `allowedAmounts` en `responseGenerator.ts` (`extractMoneyLikeNumbers(factsBlock + askNext)`)
+queda vacio. Si el modelo, al redactar el saludo, menciona cualquier numero que la regex de
+`extractMoneyLikeNumbers` interprete como monto (ej: parte del codigo de pedido, o simplemente
+frasea algo con digitos agrupados), `applyGuardrails` lo bloquea y `generateResponse` devuelve
+`SAFE_FALLBACK_MESSAGE` en vez del saludo real — y la linea de arriba concatena el menu numerado
+IGUAL, sin verificar si `greeting` termino siendo el fallback. Resultado: el cliente ve el
+mensaje de error pegado al menu, en vez de un saludo normal.
+
+Arreglo sugerido:
+1. En `responseGenerator.ts`, que `applyGuardrails`/`generateResponse` puedan señalar de alguna
+   forma (ej. un flag `wasModified` ya existe en `GuardrailResult` pero no se propaga hacia
+   afuera de `generateResponse`) que el guardrail reemplazo el texto — y que el llamador en
+   `conversationService.ts:1346` no concatene el menu numerado si `greeting` termino siendo
+   igual a `SAFE_FALLBACK_MESSAGE` (comparar el texto, o exponer el flag).
+2. Revisar por que el modelo esta generando un numero que dispara el guardrail en un saludo
+   sin montos reales — probablemente basta con ese fix, pero vale la pena loggear
+   `mentionedAmounts` en este caso especifico para confirmar que numero exacto se esta colando.
+
+### Bug relacionado (mismo reporte, no confirmado con la misma profundidad)
+
+En la misma sesion de prueba, el cliente escribio despues "menu" (texto libre, no numero) y
+volvio a recibir SOLO `SAFE_FALLBACK_MESSAGE` (sin el menu numerado esta vez — indica que este
+si paso por `buildMenuReply()`, no por la rama de arriba). Revisando `buildMenuReply`
+(`conversationService.ts` ~linea 2639) los `facts` SI incluyen los precios reales via
+`formatCurrency`, y `allowedAmounts` se deriva de esos mismos `facts`, asi que en teoria deberia
+calzar siempre — no se encontro la causa exacta en este pase. Sugerencia: loggear
+`mentionedAmounts` vs `allowedAmounts` cuando `applyGuardrails` bloquea una respuesta (por
+ahora solo loggea un `warn` generico) para ver en logs reales de Railway que numero especifico
+no calzo la proxima vez que se reproduzca.
+
+### Nota aparte (no es un bug, es limpieza pendiente)
+
+`conversationService.ts` tiene dos funciones casi identicas: `handleTextMessageLegacy` (linea
+~1789) y `handleTextMessage` (linea ~2159). Solo `handleTextMessage` esta conectada (se llama
+desde `handleIncomingMessage`/audio) — `handleTextMessageLegacy` parece codigo muerto de un
+refactor anterior. Confirmar y borrarla si en efecto no se usa en ningun lado, para que no
+haya que mantener dos copias de esta logica en paralelo.
+
+## BUG CONOCIDO #1 — condicion de carrera que duplicaba el saludo (RESUELTO 2026-08-22)
+
+Estado: RESUELTO por Codex — ver `apps/api/tests/conversationServiceLeaseRace.test.ts`.
 
 Sintoma (reproducido en produccion, screenshot real de WhatsApp): un cliente manda dos
 mensajes reales casi seguidos (ej: "ola" y luego "hola" segundos despues, sesion nueva) y el
