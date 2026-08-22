@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+nodeLinker: hoisted
+symlink: false
+# NOTA: se probaron minimumReleaseAge/blockExoticSubdeps/trustPolicy (sugeridos por un scan
+# de Semgrep) pero rompian "pnpm install" con falsos positivos sobre el lockfile actual
+# (marcaban pino/vite/undici-types como "trust downgrade" sin serlo, y bloqueaban binarios
+# opcionales de rollup ya resueltos). Se revirtieron: rompian el build, y el riesgo real que
+# mitigan (dependencia maliciosa recien publicada) ya esta cubierto por .npmrc min-release-age.
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true

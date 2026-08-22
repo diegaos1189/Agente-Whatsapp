@@ -1,0 +1,28 @@
+{
+  "name": "pollos-corralito-whatsapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agente de WhatsApp + CRM + POS para negocios de comida (restaurantes, pizzerias, hamburgueserias, etc)",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "setup": "pnpm --filter @pollos/api setup",
+    "build:shared": "pnpm --filter @pollos/shared build",
+    "dev:api": "pnpm run build:shared && pnpm --filter @pollos/api dev",
+    "dev:admin": "pnpm run build:shared && pnpm --filter @pollos/admin dev",
+    "build": "pnpm run build:shared && pnpm --filter @pollos/api build && pnpm --filter @pollos/admin build",
+    "test": "pnpm run build:shared && pnpm --filter @pollos/api test",
+    "lint": "pnpm run build:shared && pnpm --filter @pollos/api lint && pnpm --filter @pollos/admin lint",
+    "prisma:generate": "pnpm --filter @pollos/api prisma:generate",
+    "prisma:migrate": "pnpm --filter @pollos/api prisma:migrate",
+    "prisma:seed": "pnpm --filter @pollos/api prisma:seed",
+    "docker:up": "docker compose -f infra/docker-compose.yml up --build",
+    "docker:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@11.18.0"
+}

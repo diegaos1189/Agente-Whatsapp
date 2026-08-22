@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.next/
+*.log
+.env
+.env.local
+.env.*.local
+!.env.example
+coverage/
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+
+# Backups de la base de datos de produccion: contienen datos reales de clientes (telefonos,
+# pedidos, direcciones) — nunca deben subirse a un repo.
+backups/
+
+# Carpeta artefacto accidental (ruta absoluta de Windows mal interpretada por otra herramienta).
+C:/

@@ -1,0 +1,1032 @@
+:root {
+  --bg: #f5f5f7;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-solid: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --text: #1d1d1f;
+  --text-muted: #6e6e73;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-soft: rgba(0, 113, 227, 0.1);
+  --danger: #ff3b30;
+  --danger-soft: rgba(255, 59, 48, 0.1);
+  --success: #34c759;
+  --success-soft: rgba(52, 199, 89, 0.12);
+  --warning-soft: rgba(255, 149, 0, 0.14);
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Tema fijo: claro estilo iPhone (iOS), sin importar el modo del sistema/navegador. */
+
+* { box-sizing: border-box; }
+
+html { color-scheme: light; }
+html, body { height: 100%; }
+
+/* Base tipografica fluida: todo lo que usa rem (titulos, tablas, botones, formularios)
+   escala proporcional al ancho de pantalla en vez de quedar fijo en px — de 14px en
+   celulares chicos hasta 16px en desktop. */
+html { font-size: clamp(14px, 1vw + 12px, 16px); }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  /* Degradado sutil en vez de gris plano — mismo tono de fondo, un poco de vida sin perder legibilidad. */
+  background: linear-gradient(160deg, #fdf6f0 0%, var(--bg) 45%, var(--bg) 100%);
+  background-attachment: fixed;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  padding: 28px 16px;
+  background: var(--surface);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar h1 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0 0 28px;
+  padding: 0 10px;
+  color: var(--text);
+}
+
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8438rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar nav a:hover { background: var(--accent-soft); color: var(--accent); }
+
+.nav-icon { flex-shrink: 0; width: 17px; height: 17px; }
+
+.content {
+  flex: 1;
+  padding: 40px 44px;
+  max-width: 1200px;
+  min-width: 0;
+}
+
+.mobile-topbar { display: none; }
+.mobile-close-btn { display: none; }
+.sidebar-overlay { display: none; }
+
+/* Menu lateral colapsable en movil: se oculta fuera de pantalla y aparece como panel
+   deslizante encima del contenido al tocar el boton hamburguesa, en vez de empujar/aplastar
+   el contenido (que era ilegible en pantallas chicas). */
+@media (max-width: 860px) {
+  .layout { flex-direction: column; }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--surface);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .mobile-menu-btn {
+    background: transparent;
+    color: var(--text);
+    padding: 4px 8px;
+    font-size: 1.25rem;
+    border-radius: var(--radius-sm);
+  }
+  .mobile-menu-btn:hover { background: var(--accent-soft); }
+
+  .mobile-topbar-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  .mobile-close-btn {
+    display: block;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    font-size: 1rem;
+  }
+  .mobile-close-btn:hover { background: var(--accent-soft); }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 30;
+    width: 260px;
+    max-width: 82vw;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-card);
+  }
+  .sidebar.sidebar-open { transform: translateX(0); }
+  .sidebar h1 { padding: 0 0 0 2px; }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 25;
+  }
+
+  .content { padding: 20px 16px; max-width: 100%; }
+
+  /* Los inputs quedarian por debajo de 16px con el font-size fluido — Safari en iOS hace
+     zoom automatico al foco de cualquier input con letra mas chica que eso, molesto en un
+     formulario. Se fijan a 16px reales (no rem) solo en movil para evitar ese zoom. */
+  input, select, textarea { font-size: 16px; }
+}
+
+h2 {
+  margin: 0 0 24px;
+  font-size: 1.625rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+}
+
+h4 { font-weight: 600; letter-spacing: -0.01em; }
+
+/* Contenedor de scroll horizontal para tablas anchas en pantallas chicas — el <table> en si
+   NO cambia de display (eso rompe la alineacion de filas/columnas), solo el contenedor
+   alrededor scrollea. Envolver cada <table> con <div className="table-scroll">. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-lg);
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--surface-solid);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+@media (max-width: 860px) {
+  .table-scroll table { min-width: 640px; }
+}
+
+th, td {
+  text-align: left;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8438rem;
+}
+
+thead th {
+  background: transparent;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+tbody tr:last-child td { border-bottom: none; }
+tbody tr { transition: background-color 0.12s ease; }
+tbody tr:hover { background: rgba(0, 0, 0, 0.02); }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7188rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.badge.handoff { background: var(--danger-soft); color: var(--danger); }
+.badge.active { background: var(--success-soft); color: var(--success); }
+.badge.status { background: var(--accent-soft); color: var(--accent); }
+
+.badge-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+  animation: badge-pulse 1.4s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(255, 59, 48, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
+}
+
+form.settings-form,
+form.card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--surface-solid);
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+form.settings-form {
+  display: block;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  max-width: none;
+}
+form.card-form { min-width: 280px; }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-full {
+  margin-top: 20px;
+}
+
+.settings-fields-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .settings-grid { grid-template-columns: 1fr; }
+}
+
+.settings-section {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-section h3 { margin: 0; }
+
+.settings-section label {
+  font-size: 0.7813rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+form.settings-form label,
+form.card-form label {
+  font-size: 0.7813rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+form.card-form h4 { margin: 0 0 4px; font-size: 0.875rem; }
+
+input, select, textarea {
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
+  font-size: 0.8438rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: 1; }
+
+input[type="checkbox"] {
+  padding: 0;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+form.settings-form input,
+form.settings-form textarea,
+form.card-form input,
+form.card-form select,
+form.card-form textarea {
+  font-size: 0.8438rem;
+}
+
+.error-text { color: var(--danger); font-size: 0.75rem; }
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 980px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  transition: background-color 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+}
+button:hover { background: var(--accent-hover); }
+button:active { transform: scale(0.97); }
+button:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+button.danger { background: var(--danger); }
+button.danger:hover { background: #e0352b; }
+button.secondary { background: rgba(0, 0, 0, 0.06); color: var(--text); }
+button.secondary:hover { background: rgba(0, 0, 0, 0.1); }
+button.save-btn:disabled { background: #9ca0a6; color: rgba(255, 255, 255, 0.8); opacity: 1; }
+
+/* Boton "Ver" (es un <Link>, no <button>) con el mismo look que button.secondary, alineado junto a Archivar. */
+.wa-list-btn {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+  border: none;
+  padding: 9px 16px;
+  border-radius: 980px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  text-decoration: none;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.wa-list-btn:hover { background: rgba(0, 0, 0, 0.1); }
+.wa-list-btn:active { transform: scale(0.97); }
+.save-success { color: #1f9d55; font-size: 0.8125rem; font-weight: 600; }
+.muted { color: var(--text-muted); font-size: 0.8125rem; }
+
+a.link { color: var(--accent); text-decoration: none; font-weight: 500; }
+a.link:hover { text-decoration: underline; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.stat-tile {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 20px 22px;
+}
+
+.stat-tile .stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.stat-tile .stat-value {
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.stat-tile .stat-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.stat-tile .stat-value.warn { color: var(--danger); }
+.stat-tile .stat-value.ok { color: var(--success); }
+
+/* Encabezado del chat: barra verde tipo WhatsApp con avatar + nombre/telefono del cliente. */
+.chat-header {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #075e54;
+  color: #fff;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.chat-header-name { font-weight: 600; font-size: 0.9375rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-header-phone { font-size: 0.75rem; opacity: 0.8; }
+
+.chat-header-btn {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.chat-header-btn:hover { background: rgba(255, 255, 255, 0.25); }
+.chat-header-btn:disabled { opacity: 0.6; }
+
+/* Hilo de chat: colores fijos tipo WhatsApp, siempre legibles sin importar el tema del sistema. */
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #e5ddd5;
+  padding: 20px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: none;
+}
+
+.chat-bubble {
+  padding: 6px 9px 8px;
+  border-radius: 8px;
+  max-width: 65%;
+  font-size: 0.8875rem;
+  line-height: 1.35;
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
+  position: relative;
+}
+
+.chat-bubble.inbound {
+  align-self: flex-start;
+  background: #ffffff;
+  color: #111b21;
+  border-top-left-radius: 0;
+}
+
+.chat-bubble.outbound {
+  align-self: flex-end;
+  background: #d9fdd3;
+  color: #111b21;
+  border-top-right-radius: 0;
+}
+
+.chat-bubble-time {
+  font-size: 0.6875rem;
+  opacity: 0.55;
+  text-align: right;
+  margin-top: 2px;
+}
+
+/* Barra de escritura tipo WhatsApp: input pill + boton circular verde de enviar. */
+.wa-compose {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  background: #f0f2f5;
+  border-radius: 999px;
+  padding: 6px 6px 6px 18px;
+}
+
+.wa-compose-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  padding: 8px 0;
+}
+
+.wa-compose-input:focus { outline: none; box-shadow: none; }
+
+.wa-compose-send {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+
+.wa-compose-send:disabled { background: #a8dfc0; cursor: default; }
+
+/* Conversaciones en tarjetas (grid), numero del cliente como dato principal y el nombre
+   (si el contacto lo dio) debajo, mas chico. */
+.conv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.conv-card {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.conv-card:hover { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1); transform: translateY(-1px); }
+
+.conv-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wa-avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.wa-avatar-handoff { background: var(--danger); }
+
+.conv-card-body { display: flex; flex-direction: column; gap: 2px; }
+
+.conv-card-phone {
+  font-weight: 650;
+  font-size: 1rem;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.conv-card-name {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.conv-card-preview {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.conv-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.conv-card-time {
+  font-size: 0.7188rem;
+  color: var(--text-muted);
+}
+
+/* Pills de estado a color solido (en vez de texto plano) — mas facil de distinguir de un
+   vistazo entre estados normales y los que requieren atencion. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 0.7188rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.pill-success { background: var(--success); color: #fff; }
+.pill-danger { background: var(--danger); color: #fff; }
+.pill-warning { background: #ff9500; color: #fff; }
+.pill-info { background: var(--accent); color: #fff; }
+.pill-neutral { background: #8e8e93; color: #fff; }
+
+/* Buscador compacto, reutilizado en Pedidos/Conversaciones. */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 980px;
+  padding: 7px 14px;
+  min-width: 240px;
+}
+.search-box input {
+  border: none;
+  padding: 0;
+  background: transparent;
+  flex: 1;
+}
+.search-box input:focus { box-shadow: none; }
+.search-box-icon { color: var(--text-muted); font-size: 0.9375rem; }
+
+/* Barra superior de escritorio (solo la campana por ahora) — el topbar movil con hamburguesa
+   es un elemento aparte, activo solo bajo 860px. */
+.desktop-topbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+@media (max-width: 860px) {
+  .desktop-topbar { display: none; }
+}
+
+/* Detalle de conversacion: chat + panel de pedido lado a lado en escritorio, apilados
+   (pedido debajo del chat) en pantallas angostas para que las burbujas tengan espacio real. */
+.conv-detail-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.conv-detail-layout > div:first-child { flex: 2; }
+.conv-detail-order { flex: 1; min-width: 280px; }
+
+@media (max-width: 860px) {
+  .conv-detail-layout {
+    flex-direction: column;
+  }
+  .conv-detail-layout > div:first-child { flex: none; width: 100%; }
+  .conv-detail-order { min-width: 0; width: 100%; }
+}
+
+.notif-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  font-size: 1.0625rem;
+  text-decoration: none;
+  box-shadow: var(--shadow-soft);
+}
+.notif-bell-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 2px solid var(--bg);
+}
+
+/* Boton CTA con mas color, para acciones principales (crear producto/promo/faq). Se aplica
+   agregando la clase junto a la existente, ej: className="cta". */
+button.cta {
+  background: linear-gradient(135deg, #ff8a3d, #ff5f3d);
+  box-shadow: 0 4px 14px rgba(255, 95, 61, 0.35);
+}
+button.cta:hover { background: linear-gradient(135deg, #ff9a52, #ff6f4f); }
+
+/* Pedidos en tarjetas en vez de tabla — mismo espiritu que las de conversaciones. */
+.order-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.order-card {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.order-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.order-card-code {
+  font-weight: 700;
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+}
+
+.order-card-customer {
+  font-size: 0.8125rem;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.order-card-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.order-card-stat-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.order-card-stat-value {
+  font-size: 0.8438rem;
+  font-weight: 600;
+}
+
+.order-card-alert {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.order-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sidebar-logo {
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.mobile-topbar-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.opening-hours-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px 24px;
+}
+
+.opening-hours-grid > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Lista de conversaciones tipo WhatsApp: filas en vez de tarjetas, avatar + nombre/preview
+   a la izquierda, hora + estado a la derecha. Paleta clara del panel, no la oscura de WhatsApp. */
+.wa-chat-list {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.wa-chat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.wa-chat-row:last-child { border-bottom: none; }
+
+.wa-chat-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  text-decoration: none;
+  color: inherit;
+}
+.wa-chat-link:hover { background: var(--accent-soft); }
+
+.wa-chat-main { flex: 1; min-width: 0; }
+
+.wa-chat-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wa-chat-preview {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wa-chat-meta {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.wa-chat-time { font-size: 0.75rem; color: var(--text-muted); }
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.report-card {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.report-card-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.report-card-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.report-card-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.kitchen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.kitchen-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e5e5ea);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kitchen-card-late {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+.kitchen-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kitchen-item-list {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kitchen-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .kitchen-card:not(.kitchen-ticket-hide),
+  .kitchen-card:not(.kitchen-ticket-hide) * {
+    visibility: visible;
+  }
+  .kitchen-card.kitchen-ticket-hide {
+    display: none;
+  }
+  .kitchen-card:not(.kitchen-ticket-hide) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    border: none;
+  }
+  .kitchen-card-actions {
+    display: none;
+  }
+}

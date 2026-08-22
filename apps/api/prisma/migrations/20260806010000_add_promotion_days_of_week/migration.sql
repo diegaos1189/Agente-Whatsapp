@@ -1,0 +1,1 @@
+ALTER TABLE "promotions" ADD COLUMN "daysOfWeek" JSONB NOT NULL DEFAULT '[]';

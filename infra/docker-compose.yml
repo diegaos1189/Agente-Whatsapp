@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pollos
+      POSTGRES_PASSWORD: pollos
+      POSTGRES_DB: pollos_corralito
+    ports:
+      - "5434:5432"
+    volumes:
+      - pollos_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pollos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../apps/api/.env
+    environment:
+      DATABASE_URL: postgresql://pollos:pollos@postgres:5432/pollos_corralito?schema=public
+      BACKUP_DIR: /app/backups
+    ports:
+      - "4000:4000"
+    volumes:
+      - pollos_backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  admin:
+    build:
+      context: ..
+      dockerfile: apps/admin/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../apps/admin/.env
+    environment:
+      API_BASE_URL: http://api:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      GENERIC_TIMEZONE: America/Bogota
+    volumes:
+      - pollos_n8n_data:/home/node/.n8n
+
+volumes:
+  pollos_pg_data:
+  pollos_n8n_data:
+  pollos_backups:
