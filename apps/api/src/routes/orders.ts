@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import { OrderStatus, DeliveryType, PaymentMethod, PaymentStatus } from "@pollos/shared";
+import { requirePermission } from "../modules/adminUsers/adminAuth.js";
 import {
   toOrderDTO,
   updateOrderStatus,
@@ -54,6 +55,7 @@ const manualOrderSchema = z.object({
 
 export async function orderRoutes(app: FastifyInstance) {
   app.get("/api/orders", async (request) => {
+    requirePermission(request, "orders");
     const query = z.object({ status: z.string().optional(), contactId: z.string().optional() }).parse(request.query);
 
     const orders = await prisma.order.findMany({
@@ -70,6 +72,7 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/orders", async (request, reply) => {
+    requirePermission(request, "orders");
     const body = manualOrderSchema.parse(request.body);
 
     const contact = await prisma.contact.findUnique({ where: { id: body.contactId } });
@@ -124,6 +127,7 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/orders/:id", async (request, reply) => {
+    requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const order = await prisma.order.findUnique({
       where: { id },
@@ -134,6 +138,7 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/orders/:id/items", async (request, reply) => {
+    requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = z
       .object({ items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1) })
@@ -177,6 +182,7 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/orders/:id/confirm-payment", async (request, reply) => {
+    requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
@@ -194,6 +200,7 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/orders/:id/mark-paid", async (request, reply) => {
+    requirePermission(request, "facturacion");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
@@ -209,6 +216,7 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/orders/:id/status", async (request, reply) => {
+    requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = z.object({ status: z.enum(ORDER_STATUS_VALUES), note: z.string().optional() }).parse(request.body);
 
@@ -228,6 +236,7 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/orders/:id/clear-flag", async (request, reply) => {
+    requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });

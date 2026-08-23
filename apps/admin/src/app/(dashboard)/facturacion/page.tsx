@@ -50,7 +50,7 @@ export default async function FacturacionPage({
         <div>
           <h2 style={{ margin: 0 }}>Facturación</h2>
           <p className="muted" style={{ marginTop: 4 }}>
-            Registro de ventas y control de domicilios — se genera solo por cada pedido, sin captura manual.
+            Registro de ventas y control de domicilios - se genera solo por cada pedido, sin captura manual.
           </p>
         </div>
         <SearchBox placeholder="Buscar por número, cliente o teléfono..." />

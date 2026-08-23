@@ -1,18 +1,17 @@
+import { ADMIN_ROLE, STAFF_ROLE, PERMISSION_KEYS, type PermissionKey, type AdminRole } from "@pollos/shared";
+
 // Separado de auth.ts a proposito: este archivo lo importa middleware.ts, que corre en
 // Edge Runtime y NO soporta node:crypto (que auth.ts si usa). Solo usa Web APIs (btoa/atob,
 // TextEncoder) disponibles tanto en Node como en Edge.
 export const SESSION_COOKIE_NAME = "admin_session";
 
-export const ADMIN_ROLE = "ADMIN";
-export const STAFF_ROLE = "STAFF";
-
-export const PERMISSION_KEYS = ["metrics", "conversations", "orders", "products", "promotions", "faqs", "kitchen", "facturacion"] as const;
-export type PermissionKey = (typeof PERMISSION_KEYS)[number];
+export { ADMIN_ROLE, STAFF_ROLE, PERMISSION_KEYS };
+export type { PermissionKey };
 
 export interface SessionPayload {
   sub: string;
   username: string;
-  role: typeof ADMIN_ROLE | typeof STAFF_ROLE;
+  role: AdminRole;
   permissions: PermissionKey[];
   iat: number;
 }

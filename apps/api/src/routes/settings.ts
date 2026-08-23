@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requireAdmin, requireAuthenticated } from "../modules/adminUsers/adminAuth.js";
 import { prisma } from "../db/prisma.js";
 import { getBusinessSettings, invalidateBusinessSettingsCache } from "../modules/business/businessHoursService.js";
 
@@ -73,7 +74,8 @@ function isUnchangedMask(value: string | undefined): boolean {
 }
 
 export async function settingsRoutes(app: FastifyInstance) {
-  app.get("/api/settings", async () => {
+  app.get("/api/settings", async (request) => {
+    requireAuthenticated(request);
     const settings = await getBusinessSettings();
     return {
       ...settings,
@@ -84,6 +86,7 @@ export async function settingsRoutes(app: FastifyInstance) {
   });
 
   app.put("/api/settings", async (request) => {
+    requireAdmin(request);
     const body = settingsUpdateSchema.parse(request.body);
     // Si el campo llego igual a como se mostro (enmascarado) o vacio, no se toca el valor real guardado.
     if (isUnchangedMask(body.whatsappToken) || body.whatsappToken === "") delete body.whatsappToken;

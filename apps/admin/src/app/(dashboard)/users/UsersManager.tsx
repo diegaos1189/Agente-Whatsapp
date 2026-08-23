@@ -206,22 +206,22 @@ export function UsersManager({ initialUsers }: { initialUsers: AdminUserDTO[] })
     <div>
       <NewUserForm onCreated={() => router.refresh()} />
       <div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>Usuario</th>
-            <th>Rol</th>
-            <th>Secciones habilitadas</th>
-            <th>Contraseña</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {initialUsers.map((u) => (
-            <UserRow key={u.id} user={u} onChanged={() => router.refresh()} />
-          ))}
-        </tbody>
-      </table>
+        <table>
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              <th>Rol</th>
+              <th>Secciones habilitadas</th>
+              <th>Contraseña</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {initialUsers.map((u) => (
+              <UserRow key={u.id} user={u} onChanged={() => router.refresh()} />
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

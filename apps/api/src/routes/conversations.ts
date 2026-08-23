@@ -4,6 +4,7 @@ import { prisma } from "../db/prisma.js";
 import { ConversationStatus, HandoffReason, MessageDirection, MessageType } from "@pollos/shared";
 import type { ConversationDetailDTO, ConversationSummaryDTO, MessageDTO, PendingOrderDTO } from "@pollos/shared";
 import { getWhatsAppClient } from "../modules/whatsapp/whatsappClient.js";
+import { createAuthorizationError } from "../modules/adminUsers/adminAuth.js";
 import {
   requestDeliveryAddressFromHuman,
   savePendingOrder,
@@ -52,7 +53,7 @@ function getAdminActor(request: FastifyRequest): AdminActor {
 function requireConversationPermission(actor: AdminActor): void {
   if (actor.role === "ADMIN") return;
   if (!actor.permissions.includes("conversations")) {
-    throw new Error("No autorizado para operar conversaciones");
+    throw createAuthorizationError("No autorizado para operar conversaciones");
   }
 }
 

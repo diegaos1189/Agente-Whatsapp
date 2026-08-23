@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requirePermission } from "../modules/adminUsers/adminAuth.js";
 import { prisma } from "../db/prisma.js";
 import { listAllFaqs } from "../modules/faq/faqService.js";
 
@@ -16,14 +17,19 @@ const faqUpdateSchema = z.object({
 });
 
 export async function faqRoutes(app: FastifyInstance) {
-  app.get("/api/faqs", async () => listAllFaqs());
+  app.get("/api/faqs", async (request) => {
+    requirePermission(request, "faqs");
+    return listAllFaqs();
+  });
 
   app.post("/api/faqs", async (request) => {
+    requirePermission(request, "faqs");
     const body = faqCreateSchema.parse(request.body);
     return prisma.faq.create({ data: body });
   });
 
   app.patch("/api/faqs/:id", async (request, reply) => {
+    requirePermission(request, "faqs");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = faqUpdateSchema.parse(request.body);
     const faq = await prisma.faq.findUnique({ where: { id } });
@@ -32,6 +38,7 @@ export async function faqRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/faqs/:id", async (request, reply) => {
+    requirePermission(request, "faqs");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const faq = await prisma.faq.findUnique({ where: { id } });
     if (!faq) return reply.status(404).send({ error: "FAQ no encontrada" });

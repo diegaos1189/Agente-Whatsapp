@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { requireAnyPermission, requirePermission } from "../modules/adminUsers/adminAuth.js";
 import { prisma } from "../db/prisma.js";
 import {
   listCatalog,
@@ -96,7 +97,8 @@ const recommendationUpdateSchema = z.object({
 export async function productRoutes(app: FastifyInstance) {
   // El agente ya recarga catalogo/configuracion solo (el cache se invalida en cada guardado),
   // pero este endpoint fuerza el refresco y confirma al admin que el agente quedo al dia.
-  app.post("/api/agent/refresh", async () => {
+  app.post("/api/agent/refresh", async (request) => {
+    requirePermission(request, "products");
     invalidateCatalogCache();
     invalidateBusinessSettingsCache();
     const categories = await listCatalog();
@@ -104,17 +106,28 @@ export async function productRoutes(app: FastifyInstance) {
     return { ok: true, categoriesCount: categories.length, productsCount };
   });
 
-  app.get("/api/products", async () => listCatalog());
+  app.get("/api/products", async (request) => {
+    requireAnyPermission(request, ["products", "promotions", "orders", "conversations"]);
+    return listCatalog();
+  });
 
-  app.get("/api/promotions", async () => listActivePromotions());
+  app.get("/api/promotions", async (request) => {
+    requirePermission(request, "promotions");
+    return listActivePromotions();
+  });
 
-  app.get("/api/promotions/all", async () => listAllPromotions());
+  app.get("/api/promotions/all", async (request) => {
+    requirePermission(request, "promotions");
+    return listAllPromotions();
+  });
 
-  app.get("/api/categories", async () => {
+  app.get("/api/categories", async (request) => {
+    requireAnyPermission(request, ["products", "promotions", "orders", "conversations"]);
     return prisma.category.findMany({ orderBy: { sortOrder: "asc" } });
   });
 
   app.post("/api/categories", async (request, reply) => {
+    requirePermission(request, "products");
     const body = categoryCreateSchema.parse(request.body);
     const existing = await prisma.category.findUnique({ where: { slug: body.slug } });
     if (existing) return reply.status(409).send({ error: "Ya existe una categoria con ese slug" });
@@ -124,6 +137,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/categories/:id", async (request, reply) => {
+    requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = categoryUpdateSchema.parse(request.body);
     const category = await prisma.category.findUnique({ where: { id } });
@@ -135,6 +149,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/categories/:id", async (request, reply) => {
+    requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const category = await prisma.category.findUnique({ where: { id } });
     if (!category) return reply.status(404).send({ error: "Categoria no encontrada" });
@@ -152,6 +167,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/products", async (request) => {
+    requirePermission(request, "products");
     const body = productCreateSchema.parse(request.body);
     const product = await prisma.product.create({ data: body });
     invalidateCatalogCache();
@@ -159,6 +175,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/products/:id", async (request, reply) => {
+    requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = productUpdateSchema.parse(request.body);
 
@@ -171,6 +188,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/products/:id", async (request, reply) => {
+    requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const product = await prisma.product.findUnique({ where: { id } });
     if (!product) return reply.status(404).send({ error: "Producto no encontrado" });
@@ -194,6 +212,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/promotions", async (request) => {
+    requirePermission(request, "promotions");
     const body = promotionCreateSchema.parse(request.body);
     return prisma.promotion.create({
       data: {
@@ -205,6 +224,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/promotions/:id", async (request, reply) => {
+    requirePermission(request, "promotions");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = promotionUpdateSchema.parse(request.body);
 
@@ -222,6 +242,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/promotions/:id", async (request, reply) => {
+    requirePermission(request, "promotions");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const promotion = await prisma.promotion.findUnique({ where: { id } });
     if (!promotion) return reply.status(404).send({ error: "Promocion no encontrada" });
@@ -232,7 +253,8 @@ export async function productRoutes(app: FastifyInstance) {
 
   // ---------- Reglas de recomendacion (upsell/cross-sell), ver recommendationService.ts ----------
 
-  app.get("/api/recommendations", async () => {
+  app.get("/api/recommendations", async (request) => {
+    requirePermission(request, "products");
     const rows = await prisma.productRecommendation.findMany({
       orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
       include: {
@@ -256,6 +278,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/recommendations", async (request, reply) => {
+    requirePermission(request, "products");
     const body = recommendationCreateSchema.parse(request.body);
     if (body.recommendedProductId === body.sourceProductId) {
       return reply.status(400).send({ error: "El producto recomendado no puede ser el mismo que el de origen" });
@@ -274,6 +297,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/recommendations/:id", async (request, reply) => {
+    requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = recommendationUpdateSchema.parse(request.body);
     const rule = await prisma.productRecommendation.findUnique({ where: { id } });
@@ -283,6 +307,7 @@ export async function productRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/recommendations/:id", async (request, reply) => {
+    requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const rule = await prisma.productRecommendation.findUnique({ where: { id } });
     if (!rule) return reply.status(404).send({ error: "Regla de recomendacion no encontrada" });

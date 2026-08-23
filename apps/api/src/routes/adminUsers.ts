@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requireAdmin } from "../modules/adminUsers/adminAuth.js";
 import {
   ADMIN_ROLE,
   STAFF_ROLE,
@@ -41,11 +42,13 @@ export async function adminUserRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get("/api/admin-users", async () => {
+  app.get("/api/admin-users", async (request) => {
+    requireAdmin(request);
     return listUsers();
   });
 
   app.post("/api/admin-users", async (request, reply) => {
+    requireAdmin(request);
     const body = createUserSchema.parse(request.body);
     try {
       return await createUser(body);
@@ -55,6 +58,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/admin-users/:id", async (request, reply) => {
+    requireAdmin(request);
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = updateUserSchema.parse(request.body);
     try {
@@ -65,6 +69,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/admin-users/:id", async (request, reply) => {
+    requireAdmin(request);
     const { id } = z.object({ id: z.string() }).parse(request.params);
     try {
       await deleteUser(id);

@@ -1,11 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { requirePermission } from "../modules/adminUsers/adminAuth.js";
 import { getMetrics, getMetricsForRange } from "../modules/metrics/metricsService.js";
 
 export async function metricsRoutes(app: FastifyInstance) {
-  app.get("/api/metrics", async () => getMetrics());
+  app.get("/api/metrics", async (request) => {
+    requirePermission(request, "metrics");
+    return getMetrics();
+  });
 
   app.get("/api/metrics/range", async (request, reply) => {
+    requirePermission(request, "metrics");
     const query = z.object({ from: z.string(), to: z.string() }).parse(request.query);
     const from = new Date(query.from);
     const to = new Date(query.to);

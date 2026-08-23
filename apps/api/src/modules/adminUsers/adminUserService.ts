@@ -1,16 +1,14 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { ADMIN_ROLE, STAFF_ROLE, PERMISSION_KEYS, type PermissionKey, type AdminRole } from "@pollos/shared";
 import { prisma } from "../../db/prisma.js";
 
-export const ADMIN_ROLE = "ADMIN";
-export const STAFF_ROLE = "STAFF";
-
-export const PERMISSION_KEYS = ["metrics", "conversations", "orders", "products", "promotions"] as const;
-export type PermissionKey = (typeof PERMISSION_KEYS)[number];
+export { ADMIN_ROLE, STAFF_ROLE, PERMISSION_KEYS };
+export type { PermissionKey };
 
 export interface AdminUserDTO {
   id: string;
   username: string;
-  role: string;
+  role: AdminRole;
   permissions: string[];
   createdAt: string;
 }
@@ -30,7 +28,11 @@ function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(candidate, expected);
 }
 
-function toDTO(user: { id: string; username: string; role: string; permissions: string[]; createdAt: Date }): AdminUserDTO {
+function normalizeRole(role: string): AdminRole {
+  return role === ADMIN_ROLE ? ADMIN_ROLE : STAFF_ROLE;
+}
+
+function toDTO(user: { id: string; username: string; role: AdminRole; permissions: string[]; createdAt: Date }): AdminUserDTO {
   return {
     id: user.id,
     username: user.username,
@@ -60,18 +62,18 @@ export async function login(username: string, password: string): Promise<AdminUs
   const user = await prisma.adminUser.findUnique({ where: { username } });
   if (!user) return null;
   if (!verifyPassword(password, user.passwordHash)) return null;
-  return toDTO(user);
+  return toDTO({ ...user, role: normalizeRole(user.role) });
 }
 
 export async function listUsers(): Promise<AdminUserDTO[]> {
   const users = await prisma.adminUser.findMany({ orderBy: { createdAt: "asc" } });
-  return users.map(toDTO);
+  return users.map((user) => toDTO({ ...user, role: normalizeRole(user.role) }));
 }
 
 export async function createUser(params: {
   username: string;
   password: string;
-  role: string;
+  role: AdminRole;
   permissions: string[];
 }): Promise<AdminUserDTO> {
   const existing = await prisma.adminUser.findUnique({ where: { username: params.username } });
@@ -87,12 +89,12 @@ export async function createUser(params: {
       permissions: params.role === ADMIN_ROLE ? [] : params.permissions,
     },
   });
-  return toDTO(user);
+  return toDTO({ ...user, role: normalizeRole(user.role) });
 }
 
 export async function updateUser(
   id: string,
-  params: { password?: string; role?: string; permissions?: string[] },
+  params: { password?: string; role?: AdminRole; permissions?: string[] },
 ): Promise<AdminUserDTO> {
   if (params.role === STAFF_ROLE) {
     const current = await prisma.adminUser.findUnique({ where: { id } });
@@ -112,7 +114,7 @@ export async function updateUser(
       ...(params.permissions ? { permissions: params.permissions } : {}),
     },
   });
-  return toDTO(user);
+  return toDTO({ ...user, role: normalizeRole(user.role) });
 }
 
 export async function deleteUser(id: string): Promise<void> {

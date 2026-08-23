@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { PaymentMethod, PaymentStatus } from "@pollos/shared";
+import { getAdminActor, requirePermission } from "../modules/adminUsers/adminAuth.js";
 import {
   createPaymentForOrder,
   createRefund,
@@ -10,32 +11,15 @@ import {
   toPaymentDTO,
 } from "../modules/payments/paymentService.js";
 
-function getActor(request: { headers: Record<string, unknown> }) {
-  const role = String(request.headers["x-admin-role"] ?? "");
-  const permissions = String(request.headers["x-admin-permissions"] ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return { role, permissions };
-}
-
-function requireBillingPermission(request: { headers: Record<string, unknown> }) {
-  const actor = getActor(request);
-  if (!actor.role) return;
-  if (actor.role === "ADMIN") return;
-  if (!actor.permissions.includes("facturacion")) {
-    throw new Error("No tiene permisos para gestionar pagos");
-  }
-}
-
 export async function paymentRoutes(app: FastifyInstance) {
-  app.get("/api/payments", async () => {
+  app.get("/api/payments", async (request) => {
+    requirePermission(request, "facturacion");
     const payments = await listPayments();
     return payments.map(toPaymentDTO);
   });
 
   app.post("/api/orders/:id/payments", async (request, reply) => {
-    requireBillingPermission(request);
+    requirePermission(request, "facturacion");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = z
       .object({
@@ -67,7 +51,7 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   app.post("/api/payments/:id/refunds", async (request, reply) => {
     try {
-      requireBillingPermission(request);
+      requirePermission(request, "facturacion");
     } catch (error) {
       return reply.status(403).send({ error: error instanceof Error ? error.message : "No autorizado" });
     }
@@ -80,7 +64,7 @@ export async function paymentRoutes(app: FastifyInstance) {
       })
       .parse(request.body);
     try {
-      const actor = getActor(request);
+      const actor = getAdminActor(request);
       return await createRefund({
         paymentId: id,
         amount: body.amount,
@@ -94,7 +78,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/payments/:id/mark-paid", async (request, reply) => {
-    requireBillingPermission(request);
+    requirePermission(request, "facturacion");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = z
       .object({
@@ -110,13 +94,13 @@ export async function paymentRoutes(app: FastifyInstance) {
       method: body.method ?? null,
       amount: body.amount ?? null,
       providerReference: body.providerReference ?? null,
-      actor: getActor(request).role || "operador",
+      actor: getAdminActor(request).role || "operador",
     });
     return { ok: true, status: PaymentStatus.PAID };
   });
 
   app.post("/api/payments/reconcile", async (request) => {
-    requireBillingPermission(request);
+    requirePermission(request, "facturacion");
     return reconcilePayments();
   });
 }
