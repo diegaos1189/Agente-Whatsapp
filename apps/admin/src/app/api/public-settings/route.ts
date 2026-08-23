@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { API_BASE_URL } from "@/lib/apiServer";
+import { apiServerFetch } from "@/lib/apiServer";
 import type { BusinessSettingsDTO } from "@pollos/shared";
 
 export const dynamic = "force-dynamic";
 
-/** Subconjunto publico de business_settings para la landing page (sin autenticacion). */
+/** Subconjunto publico de business_settings para la landing page (sin autenticacion de sesion). */
 export type PublicSettingsDTO = {
   restaurantName: string;
   logoUrl: string | null;
@@ -16,9 +16,7 @@ export type PublicSettingsDTO = {
 
 export async function GET() {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/public-settings`, { cache: "no-store" });
-    if (!res.ok) return NextResponse.json(null, { status: 200 });
-    const publicSettings: PublicSettingsDTO = await res.json();
+    const publicSettings = await apiServerFetch<PublicSettingsDTO>("/api/public-settings");
     return NextResponse.json(publicSettings);
   } catch {
     return NextResponse.json(null, { status: 200 });
