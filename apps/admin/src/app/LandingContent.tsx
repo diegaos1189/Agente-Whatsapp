@@ -1,36 +1,79 @@
-"use client";
+const PRODUCT_NAME = "Pedix";
+const CONTACT_EMAIL = "contacto@kenzygroup.co";
+const DEMO_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Quiero una demo de ${PRODUCT_NAME}`)}`;
 
-import { useEffect, useState } from "react";
-import type { PublicSettingsDTO } from "./api/public-settings/route";
-import { WhatsAppButton } from "./WhatsAppButton";
+const FEATURE_GROUPS: Array<{
+  title: string;
+  items: Array<{ title: string; text: string }>;
+}> = [
+  {
+    title: "Atención al cliente",
+    items: [
+      {
+        title: "Agente de WhatsApp con IA",
+        text: "Responde pedidos, dudas del menú y horarios 24/7, con el tono de tu negocio.",
+      },
+      {
+        title: "Recomendaciones y upsell",
+        text: "El agente sugiere combos y acompañantes en el momento justo, sin ser invasivo.",
+      },
+      {
+        title: "CRM de conversaciones",
+        text: "Bandeja tipo WhatsApp con historial completo por cliente y traspaso a un humano cuando hace falta.",
+      },
+    ],
+  },
+  {
+    title: "Operación",
+    items: [
+      {
+        title: "Gestión de pedidos en tiempo real",
+        text: "Estados de pago, cocina, despacho y entrega, con alertas cuando un pedido se atasca.",
+      },
+      {
+        title: "Pantalla de cocina",
+        text: "Vista dedicada para el equipo de cocina: pedidos entrantes y un clic para marcar listo.",
+      },
+      {
+        title: "Catálogo y combos",
+        text: "Categorías, productos, modificadores y precios, editables sin tocar código.",
+      },
+      {
+        title: "Cobros y conciliación",
+        text: "Efectivo, transferencia y tarjeta, con seguimiento de pagos, reembolsos y saldos pendientes.",
+      },
+    ],
+  },
+  {
+    title: "Crecimiento",
+    items: [
+      {
+        title: "Recuperación de carritos",
+        text: "Si un cliente arma un pedido y no lo termina, el agente le escribe para retomarlo.",
+      },
+      {
+        title: "Campañas de reactivación",
+        text: "Detecta clientes que dejaron de pedir y les manda una campaña automática por WhatsApp.",
+      },
+      {
+        title: "Métricas y analítica",
+        text: "Ventas, productos más vendidos, horas pico, segmentación de clientes y tiempos de operación.",
+      },
+      {
+        title: "Roles y permisos por equipo",
+        text: "Cocina, ventas y administración, cada quien con acceso solo a lo que necesita.",
+      },
+    ],
+  },
+];
 
-const DAY_LABELS_ES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-
-function waLink(phone: string, text: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
-}
+const STEPS = [
+  { step: "1", title: "Conecta tu WhatsApp", text: "Vinculamos el número oficial de tu negocio a la plataforma." },
+  { step: "2", title: "Configura tu menú", text: "Cargas categorías, productos y precios desde el panel — sin código." },
+  { step: "3", title: "Empieza a vender", text: "El agente atiende, cobra y organiza — tú ves todo desde un solo panel." },
+];
 
 export function LandingContent() {
-  const [settings, setSettings] = useState<PublicSettingsDTO | null>(null);
-
-  useEffect(() => {
-    fetch("/api/public-settings")
-      .then((res) => res.json())
-      .then((data) => setSettings(data))
-      .catch(() => setSettings(null));
-  }, []);
-
-  const name = settings?.restaurantName ?? "Nuestro negocio";
-  const phone = settings?.phone ?? "";
-  const address = settings?.address ?? "";
-  const logoUrl = settings?.logoUrl ?? null;
-  const greetingText = `Hola, quiero hacer un pedido en ${name}`;
-  const chatLink = phone ? waLink(phone, greetingText) : "#";
-  const todayKey = DAY_KEYS[new Date().getDay()];
-  const todayHours = settings?.openingHours?.[todayKey ?? ""] ?? null;
-
   return (
     <div style={{ background: "#ffffff", color: "#252527", minHeight: "100vh" }}>
       {/* Navbar */}
@@ -43,14 +86,9 @@ export function LandingContent() {
           borderBottom: "1px solid rgba(0,0,0,0.06)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {logoUrl && (
-            <img src={logoUrl} alt={name} style={{ width: 36, height: 36, borderRadius: 8, objectFit: "contain" }} />
-          )}
-          <span style={{ fontWeight: 700, fontSize: "1.125rem" }}>{name}</span>
-        </div>
-        <WhatsAppButton
-          href={chatLink}
+        <span style={{ fontWeight: 800, fontSize: "1.25rem", color: "#2a8f17" }}>{PRODUCT_NAME}</span>
+        <a
+          href={DEMO_MAILTO}
           style={{
             background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
             color: "#fff",
@@ -62,8 +100,8 @@ export function LandingContent() {
             boxShadow: "0 4px 14px rgba(49,167,27,0.35)",
           }}
         >
-          Pedir por WhatsApp
-        </WhatsAppButton>
+          Solicita una demo
+        </a>
       </header>
 
       {/* Hero */}
@@ -91,18 +129,18 @@ export function LandingContent() {
               marginBottom: 18,
             }}
           >
-            Pedidos por WhatsApp
+            Agente de WhatsApp + CRM + POS
           </span>
           <h1 style={{ fontSize: "2.5rem", lineHeight: 1.15, margin: "0 0 16px", fontWeight: 800 }}>
-            Pide en <span style={{ color: "#31a71b" }}>{name}</span> directo por WhatsApp
+            El agente de WhatsApp con IA que atiende, vende y organiza tu negocio de comida
           </h1>
-          <p style={{ color: "#4d4c52", fontSize: "1.0625rem", lineHeight: 1.6, margin: "0 0 28px", maxWidth: 440 }}>
-            Escríbenos, arma tu pedido con nuestro asistente y recíbelo en tu casa o recógelo en el local. Sin
-            apps, sin registros — solo WhatsApp.
+          <p style={{ color: "#4d4c52", fontSize: "1.0625rem", lineHeight: 1.6, margin: "0 0 28px", maxWidth: 460 }}>
+            {PRODUCT_NAME} conecta tu WhatsApp con inteligencia artificial: toma pedidos, cobra, avisa a cocina y te
+            muestra todo en un panel — para restaurantes, pizzerías, hamburgueserías y negocios de comida similares.
           </p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <a
-              href={chatLink}
+              href={DEMO_MAILTO}
               style={{
                 background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
                 color: "#fff",
@@ -114,10 +152,10 @@ export function LandingContent() {
                 boxShadow: "0 4px 14px rgba(49,167,27,0.35)",
               }}
             >
-              Escribir por WhatsApp
+              Solicita una demo
             </a>
             <a
-              href="#como-funciona"
+              href="#servicios"
               style={{
                 border: "1.5px solid #31a71b",
                 color: "#2a8f17",
@@ -128,7 +166,7 @@ export function LandingContent() {
                 textDecoration: "none",
               }}
             >
-              Cómo funciona
+              Ver todo lo que incluye
             </a>
           </div>
         </div>
@@ -158,7 +196,7 @@ export function LandingContent() {
             >
               <div style={{ background: "#e5ddd5", borderRadius: 22, padding: 14, minHeight: 380, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ background: "#075e54", margin: "-14px -14px 8px", padding: "10px 14px", borderRadius: "22px 22px 0 0", color: "#fff", fontSize: 13, fontWeight: 700 }}>
-                  {name}
+                  Tu negocio
                 </div>
                 <div style={{ alignSelf: "flex-start", background: "#fff", borderRadius: 8, borderTopLeftRadius: 0, padding: "7px 10px", fontSize: 12.5, maxWidth: "85%" }}>
                   Hola, quiero un pedido para hoy 🙂
@@ -178,17 +216,48 @@ export function LandingContent() {
         </div>
       </section>
 
+      {/* Servicios */}
+      <section id="servicios" style={{ background: "#fffbec", padding: "56px 32px" }}>
+        <h2 style={{ textAlign: "center", fontSize: "1.75rem", fontWeight: 800, margin: "0 0 8px" }}>
+          Todo lo que necesita tu negocio, en un solo lugar
+        </h2>
+        <p style={{ textAlign: "center", color: "#4d4c52", margin: "0 0 40px" }}>
+          {PRODUCT_NAME} no es solo un chatbot — es la plataforma completa detrás del pedido.
+        </p>
+        <div style={{ maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 40 }}>
+          {FEATURE_GROUPS.map((group) => (
+            <div key={group.title}>
+              <h3 style={{ fontSize: "1.0625rem", fontWeight: 800, color: "#2a8f17", margin: "0 0 16px" }}>
+                {group.title}
+              </h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+                {group.items.map((item) => (
+                  <div
+                    key={item.title}
+                    style={{
+                      background: "#ffffff",
+                      borderRadius: 14,
+                      padding: 20,
+                      border: "1px solid rgba(0,0,0,0.06)",
+                    }}
+                  >
+                    <h4 style={{ fontSize: 14.5, fontWeight: 700, margin: "0 0 6px" }}>{item.title}</h4>
+                    <p style={{ color: "#4d4c52", fontSize: 13.5, margin: 0, lineHeight: 1.5 }}>{item.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Como funciona */}
-      <section id="como-funciona" style={{ background: "#fffbec", padding: "56px 32px" }}>
+      <section style={{ padding: "56px 32px" }}>
         <h2 style={{ textAlign: "center", fontSize: "1.75rem", fontWeight: 800, margin: "0 0 40px" }}>
-          Pedir en {name} es así de fácil
+          Empezar toma minutos, no semanas
         </h2>
         <div style={{ display: "flex", gap: 32, flexWrap: "wrap", justifyContent: "center", maxWidth: 900, margin: "0 auto" }}>
-          {[
-            { step: "1", title: "Escríbenos por WhatsApp", text: "Toca el botón y empieza la conversación, sin descargar nada." },
-            { step: "2", title: "Arma tu pedido", text: "Nuestro asistente te muestra el menú y arma tu pedido contigo." },
-            { step: "3", title: "Recíbelo", text: "A domicilio o recógelo en el local, como prefieras." },
-          ].map((s) => (
+          {STEPS.map((s) => (
             <div key={s.step} style={{ flex: "1 1 220px", maxWidth: 260, textAlign: "center" }}>
               <div
                 style={{
@@ -214,38 +283,6 @@ export function LandingContent() {
         </div>
       </section>
 
-      {/* Info strip */}
-      <section style={{ padding: "48px 32px", maxWidth: 900, margin: "0 auto" }}>
-        <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-          {todayHours && (
-            <div style={{ flex: "1 1 220px", background: "#eaf6e8", borderRadius: 14, padding: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#2a8f17", textTransform: "uppercase", marginBottom: 6 }}>
-                Horario de hoy ({DAY_LABELS_ES[new Date().getDay()]})
-              </div>
-              <div style={{ fontSize: "1.0625rem", fontWeight: 700 }}>
-                {todayHours.open} – {todayHours.close}
-              </div>
-            </div>
-          )}
-          {address && (
-            <div style={{ flex: "1 1 220px", background: "#eaf6e8", borderRadius: 14, padding: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#2a8f17", textTransform: "uppercase", marginBottom: 6 }}>
-                Dirección
-              </div>
-              <div style={{ fontSize: "1.0625rem", fontWeight: 700 }}>{address}</div>
-            </div>
-          )}
-          {settings?.acceptsDelivery && (
-            <div style={{ flex: "1 1 220px", background: "#eaf6e8", borderRadius: 14, padding: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#2a8f17", textTransform: "uppercase", marginBottom: 6 }}>
-                Domicilio
-              </div>
-              <div style={{ fontSize: "1.0625rem", fontWeight: 700 }}>Disponible en tu zona</div>
-            </div>
-          )}
-        </div>
-      </section>
-
       {/* CTA final */}
       <section
         style={{
@@ -255,10 +292,12 @@ export function LandingContent() {
           textAlign: "center",
         }}
       >
-        <h2 style={{ fontSize: "1.75rem", fontWeight: 800, margin: "0 0 12px" }}>¿Se te antojó algo?</h2>
-        <p style={{ opacity: 0.9, margin: "0 0 24px" }}>Escríbenos ahora y en minutos tienes tu pedido en camino.</p>
+        <h2 style={{ fontSize: "1.75rem", fontWeight: 800, margin: "0 0 12px" }}>
+          Lleva {PRODUCT_NAME} a tu negocio
+        </h2>
+        <p style={{ opacity: 0.9, margin: "0 0 24px" }}>Te lo configuramos y lo dejamos funcionando en minutos.</p>
         <a
-          href={chatLink}
+          href={DEMO_MAILTO}
           style={{
             display: "inline-block",
             background: "#fff",
@@ -270,13 +309,13 @@ export function LandingContent() {
             textDecoration: "none",
           }}
         >
-          Escribir por WhatsApp
+          Solicita una demo
         </a>
       </section>
 
       <footer style={{ padding: "24px 32px", textAlign: "center", color: "#4d4c52", fontSize: 12.5 }}>
-        {name}
-        {phone ? ` · ${phone}` : ""}
+        {PRODUCT_NAME} · Creado por{" "}
+        <span style={{ color: "#31a71b", fontWeight: 700 }}>KenzyGroup S.A.S</span>
       </footer>
     </div>
   );
