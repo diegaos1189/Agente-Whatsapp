@@ -74,6 +74,20 @@ function isUnchangedMask(value: string | undefined): boolean {
 }
 
 export async function settingsRoutes(app: FastifyInstance) {
+  // Sin autenticacion a proposito: alimenta la landing page publica del negocio.
+  // Solo expone datos ya visibles a cualquier cliente (nombre, logo, telefono, direccion, horario).
+  app.get("/api/public-settings", async () => {
+    const settings = await getBusinessSettings();
+    return {
+      restaurantName: settings.restaurantName,
+      logoUrl: settings.logoUrl,
+      phone: settings.phone,
+      address: settings.address,
+      openingHours: settings.openingHours,
+      acceptsDelivery: settings.acceptsDelivery,
+    };
+  });
+
   app.get("/api/settings", async (request) => {
     requireAuthenticated(request);
     const settings = await getBusinessSettings();
