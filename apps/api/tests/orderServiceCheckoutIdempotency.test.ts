@@ -23,7 +23,7 @@ vi.mock("../src/modules/n8n/n8nClient.js", () => ({
   n8nClient: n8nMock,
 }));
 
-import { createOrder } from "../src/modules/orders/orderService.js";
+import { buildOrderStatusCustomerMessage, createOrder } from "../src/modules/orders/orderService.js";
 
 function buildOrderPayload() {
   return {
@@ -201,5 +201,33 @@ describe("createOrder confirmation idempotency", () => {
 
     expect(n8nMock.notifyOrderCreated).not.toHaveBeenCalled();
     expect(n8nMock.notifyOperator).not.toHaveBeenCalled();
+  });
+
+  it("arma mensaje READY distinto para pickup y delivery", () => {
+    expect(
+      buildOrderStatusCustomerMessage({
+        status: OrderStatus.READY,
+        orderCode: "POL-1",
+        deliveryType: "PICKUP",
+      }),
+    ).toContain("recoger en el local");
+
+    expect(
+      buildOrderStatusCustomerMessage({
+        status: OrderStatus.READY,
+        orderCode: "POL-2",
+        deliveryType: "DELIVERY",
+      }),
+    ).toContain("buscando un domiciliario");
+  });
+
+  it("arma mensaje entregado con cierre correcto para cliente", () => {
+    expect(
+      buildOrderStatusCustomerMessage({
+        status: OrderStatus.DELIVERED,
+        orderCode: "POL-3",
+        deliveryType: "DELIVERY",
+      }),
+    ).toContain("¡Que lo disfrute!");
   });
 });

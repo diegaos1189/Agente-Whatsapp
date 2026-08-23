@@ -24,6 +24,34 @@ export const ORDER_STATUS_CUSTOMER_MESSAGE: Record<string, (orderCode: string) =
   [OrderStatus.CANCELLED]: (code) => `Su pedido ${code} fue cancelado.`,
 };
 
+export function buildOrderStatusCustomerMessage(params: {
+  status: string;
+  orderCode: string;
+  deliveryType: DeliveryType;
+}): string | null {
+  const { status, orderCode, deliveryType } = params;
+
+  if (status === OrderStatus.READY) {
+    return deliveryType === "PICKUP"
+      ? `Su pedido ${orderCode} ya esta listo para recoger en el local.`
+      : `Su pedido ${orderCode} esta listo. Estamos buscando un domiciliario para enviarselo.`;
+  }
+
+  if (status === OrderStatus.ON_THE_WAY) {
+    return `Su pedido ${orderCode} se encuentra en reparto.`;
+  }
+
+  if (status === OrderStatus.DELIVERED) {
+    return `Su pedido ${orderCode} fue entregado. ¡Que lo disfrute!`;
+  }
+
+  if (status === OrderStatus.CANCELLED) {
+    return `Su pedido ${orderCode} fue cancelado.`;
+  }
+
+  return null;
+}
+
 export interface CartLine {
   productId: string;
   productName: string;
@@ -51,6 +79,20 @@ interface CreateOrderParams {
   phone: string;
   currency?: string;
 }
+
+export interface OrderOperationalAlert {
+  reason:
+    | "AWAITING_PAYMENT_STALE"
+    | "RECEIVED_STALE"
+    | "READY_FOR_PICKUP_STALE"
+    | "READY_FOR_DISPATCH_STALE";
+  note: string;
+  delayMinutes: number;
+}
+
+const PAYMENT_CONFIRMATION_ALERT_MINUTES = 15;
+const READY_PICKUP_ALERT_MINUTES = 20;
+const READY_DELIVERY_ALERT_MINUTES = 10;
 
 const orderWithItems = Prisma.validator<Prisma.OrderDefaultArgs>()({
   include: { items: { include: { product: true } }, events: true, payments: true },
@@ -273,6 +315,103 @@ export async function updateOrderStatus(orderId: string, status: string, note?: 
 
 export async function clearOrderFlag(orderId: string) {
   return prisma.order.update({ where: { id: orderId }, data: { flaggedForReview: false } });
+}
+
+function minutesBetween(from: Date, to: Date): number {
+  return Math.max(0, Math.round((to.getTime() - from.getTime()) / 60000));
+}
+
+function latestStatusTimestamp(order: OrderWithItems, status: string): Date | null {
+  const matching = order.events
+    .filter((event) => event.status === status)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return matching[0]?.createdAt ?? null;
+}
+
+export function evaluateOrderOperationalAlert(params: {
+  order: OrderWithItems;
+  estimatedPrepMinutes: number;
+  now?: Date;
+}): OrderOperationalAlert | null {
+  const { order, estimatedPrepMinutes, now = new Date() } = params;
+
+  if (order.status === OrderStatus.AWAITING_PAYMENT) {
+    const delayMinutes = minutesBetween(order.createdAt, now) - PAYMENT_CONFIRMATION_ALERT_MINUTES;
+    if (delayMinutes > 0) {
+      return {
+        reason: "AWAITING_PAYMENT_STALE",
+        delayMinutes,
+        note: `Pedido esperando confirmacion de pago por mas de ${PAYMENT_CONFIRMATION_ALERT_MINUTES} min.`,
+      };
+    }
+    return null;
+  }
+
+  if (order.status === OrderStatus.RECEIVED) {
+    const threshold = estimatedPrepMinutes;
+    const delayMinutes = minutesBetween(order.createdAt, now) - threshold;
+    if (delayMinutes > 0) {
+      return {
+        reason: "RECEIVED_STALE",
+        delayMinutes,
+        note: `Pedido en preparacion supero el estimado por ${delayMinutes} min.`,
+      };
+    }
+    return null;
+  }
+
+  if (order.status === OrderStatus.READY) {
+    const readySince = latestStatusTimestamp(order, OrderStatus.READY) ?? order.updatedAt ?? order.createdAt;
+    const threshold = order.deliveryType === "PICKUP" ? READY_PICKUP_ALERT_MINUTES : READY_DELIVERY_ALERT_MINUTES;
+    const delayMinutes = minutesBetween(readySince, now) - threshold;
+    if (delayMinutes > 0) {
+      return {
+        reason: order.deliveryType === "PICKUP" ? "READY_FOR_PICKUP_STALE" : "READY_FOR_DISPATCH_STALE",
+        delayMinutes,
+        note:
+          order.deliveryType === "PICKUP"
+            ? `Pedido listo para recoger sin cerrar por mas de ${threshold} min.`
+            : `Pedido listo esperando despacho por mas de ${threshold} min.`,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function auditOrdersForOperationalRisk(params: {
+  estimatedPrepMinutes: number;
+  now?: Date;
+}): Promise<{ flagged: number }> {
+  const { estimatedPrepMinutes, now = new Date() } = params;
+  const orders = await prisma.order.findMany({
+    where: {
+      status: { in: [OrderStatus.AWAITING_PAYMENT, OrderStatus.RECEIVED, OrderStatus.READY] },
+    },
+    ...orderWithItems,
+  });
+
+  let flagged = 0;
+  for (const order of orders) {
+    const alert = evaluateOrderOperationalAlert({ order, estimatedPrepMinutes, now });
+    if (!alert) continue;
+    if (order.flaggedForReview && order.flagNote === alert.note) continue;
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { flaggedForReview: true, flagNote: alert.note },
+    });
+    await prisma.orderEvent.create({
+      data: {
+        orderId: order.id,
+        status: order.status,
+        note: `ALERTA OPERATIVA: ${alert.note}`,
+      },
+    });
+    flagged += 1;
+  }
+
+  return { flagged };
 }
 
 /**

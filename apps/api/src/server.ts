@@ -5,6 +5,7 @@ import { startDailyArchiveScheduler } from "./modules/scheduler/dailyArchive.js"
 import { startBackupScheduler } from "./modules/backup/backupService.js";
 import { ensureBootstrapAdmin } from "./modules/adminUsers/adminUserService.js";
 import { startCartRecoveryScheduler } from "./modules/conversation/cartRecoveryService.js";
+import { startOrderOperationalAlertsScheduler } from "./modules/scheduler/orderOperationalAlerts.js";
 
 const app = buildApp();
 
@@ -16,6 +17,7 @@ app
     startDailyArchiveScheduler();
     startBackupScheduler();
     startCartRecoveryScheduler();
+    startOrderOperationalAlertsScheduler();
   })
   .catch((error) => {
     logger.error({ err: error }, "No se pudo iniciar el servidor");

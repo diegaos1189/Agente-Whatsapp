@@ -22,6 +22,30 @@ const STATUS_PILL_CLASS: Record<string, string> = {
   AWAITING_PAYMENT: "pill-warning",
 };
 
+function getOperationalBadge(order: OrderDTO): { label: string; color: string; background: string } | null {
+  const note = (order.flagNote ?? "").toLowerCase();
+
+  if (order.status === "AWAITING_PAYMENT") {
+    return { label: "Pago pendiente", color: "#9a6700", background: "var(--warning-soft)" };
+  }
+  if (note.includes("confirmacion de pago")) {
+    return { label: "Transferencia estancada", color: "var(--danger)", background: "var(--danger-soft)" };
+  }
+  if (note.includes("preparacion")) {
+    return { label: "Retraso en cocina", color: "var(--danger)", background: "var(--danger-soft)" };
+  }
+  if (note.includes("despacho")) {
+    return { label: "Esperando despacho", color: "var(--danger)", background: "var(--danger-soft)" };
+  }
+  if (note.includes("recoger")) {
+    return { label: "Listo para recoger", color: "#9a6700", background: "var(--warning-soft)" };
+  }
+  if (order.flaggedForReview) {
+    return { label: "Revisar pedido", color: "var(--danger)", background: "var(--danger-soft)" };
+  }
+  return null;
+}
+
 function OrderEditForm({
   order,
   products,
@@ -34,8 +58,6 @@ function OrderEditForm({
   onSaved: () => void;
 }) {
   const [lines, setLines] = useState<EditLine[]>(
-    // Items cuyo producto ya se borro del catalogo (productId null) no se pueden re-editar
-    // via el selector — quedan fuera de la correccion, solo persisten como historial.
     order.items
       .filter((i): i is typeof i & { productId: string } => i.productId !== null)
       .map((i) => ({ productId: i.productId, productName: i.productName, quantity: i.quantity })),
@@ -100,7 +122,7 @@ function OrderEditForm({
         <select value={addProductId} onChange={(e) => setAddProductId(e.target.value)} style={{ flex: 1 }}>
           {products.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.categoryName} — {p.name}
+              {p.categoryName} - {p.name}
             </option>
           ))}
         </select>
@@ -137,6 +159,7 @@ export function OrderRow({
   const [clearing, setClearing] = useState(false);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
   const awaitingPayment = order.status === "AWAITING_PAYMENT";
+  const operationalBadge = getOperationalBadge(order);
 
   async function dismissFlag() {
     setClearing(true);
@@ -163,7 +186,7 @@ export function OrderRow({
       className="order-card"
       style={
         order.flaggedForReview
-          ? { borderColor: "var(--danger)" }
+          ? { borderColor: "var(--danger)", boxShadow: "0 0 0 1px var(--danger-soft), var(--shadow-card)" }
           : awaitingPayment
             ? { borderColor: "#ff9500" }
             : undefined
@@ -176,11 +199,28 @@ export function OrderRow({
             {order.customerName ?? "Cliente"} <span className="muted">· {order.phone}</span>
           </div>
         </div>
-        {awaitingPayment ? (
-          <span className="pill pill-warning">Esperando pago</span>
-        ) : (
-          <span className={`pill ${STATUS_PILL_CLASS[order.status] ?? "pill-neutral"}`}>{order.status}</span>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+          {awaitingPayment ? (
+            <span className="pill pill-warning">Esperando pago</span>
+          ) : (
+            <span className={`pill ${STATUS_PILL_CLASS[order.status] ?? "pill-neutral"}`}>{order.status}</span>
+          )}
+          {operationalBadge && (
+            <span
+              style={{
+                background: operationalBadge.background,
+                color: operationalBadge.color,
+                borderRadius: 999,
+                padding: "4px 8px",
+                fontSize: "0.6875rem",
+                fontWeight: 700,
+                lineHeight: 1.2,
+              }}
+            >
+              {operationalBadge.label}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="order-card-stats">
@@ -215,22 +255,24 @@ export function OrderRow({
 
       {!awaitingPayment && (
         <div>
-          <OrderStatusSelect orderId={order.id} status={order.status} />
+          <OrderStatusSelect orderId={order.id} status={order.status} deliveryType={order.deliveryType} />
         </div>
       )}
 
       {order.flaggedForReview && (
         <div className="order-card-alert" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
-          ⚠ {order.flagNote ?? "El cliente agrego mas al pedido, revisar."}
+          <strong style={{ display: "block", marginBottom: 4 }}>Atencion operativa</strong>
+          {order.flagNote ?? "El pedido necesita revision del equipo."}
           <button type="button" className="secondary" disabled={clearing} onClick={dismissFlag} style={{ marginLeft: 8, fontWeight: 400 }}>
-            Ya revise
+            {clearing ? "Limpiando..." : "Ya revise"}
           </button>
         </div>
       )}
 
       {awaitingPayment && (
         <div className="order-card-alert" style={{ background: "var(--warning-soft)" }}>
-          ⏳ Pago por transferencia — verifique que la plata realmente llego antes de confirmar.
+          <strong style={{ display: "block", marginBottom: 4 }}>Pendiente de validar</strong>
+          Pago por transferencia: confirme que la plata realmente llego antes de pasarlo a preparacion.
           <button type="button" disabled={confirmingPayment} onClick={confirmPayment} style={{ marginLeft: 8, fontWeight: 600 }}>
             {confirmingPayment ? "Confirmando..." : "Pago confirmado"}
           </button>
@@ -263,7 +305,7 @@ export function OrderRow({
         </div>
         {order.contactPhone && order.contactPhone !== order.phone && (
           <div className="muted" style={{ fontSize: "0.75rem" }}>
-            📞 Contacto para el domiciliario: {order.contactPhone} (distinto al de WhatsApp)
+            Contacto para el domiciliario: {order.contactPhone}
           </div>
         )}
       </div>

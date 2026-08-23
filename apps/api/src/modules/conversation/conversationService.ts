@@ -1,7 +1,7 @@
 import { Prisma, type Conversation } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import { logger } from "../../utils/logger.js";
-import { messageContainsHandoffKeyword } from "../../utils/text.js";
+import { messageContainsHandoffKeyword, repairTextEncodingArtifacts } from "../../utils/text.js";
 import { formatCurrency } from "../../utils/currency.js";
 import {
   ConversationStatus,
@@ -37,16 +37,17 @@ import {
   type ProductResolutionResult,
 } from "../products/productService.js";
 import {
+  buildOrderStatusCustomerMessage,
   createOrder,
   getLatestOrderForContact,
   ORDER_STATUS_LABELS_ES,
-  ORDER_STATUS_CUSTOMER_MESSAGE,
   estimateDeliveryMinutes,
   type CartLine,
 } from "../orders/orderService.js";
 import { calculateCartPricing, formatCartPricingFacts } from "../orders/pricingService.js";
 import {
   buildEmptyCheckoutState,
+  buildCheckoutRecoveryPrompt,
   invalidateCheckoutState,
   isCheckoutSummaryStale,
   prepareCheckoutSummary,
@@ -466,6 +467,8 @@ async function sendAndLog(
   receivedAt?: number,
   options?: { senderType?: ConversationSenderType; adminUserId?: string | null; bypassOwnershipCheck?: boolean },
 ) {
+  const safeBody = repairTextEncodingArtifacts(body);
+
   if (receivedAt !== undefined) {
     const elapsed = Date.now() - receivedAt;
     if (elapsed < MIN_REPLY_DELAY_MS) {
@@ -490,8 +493,8 @@ async function sendAndLog(
   }
 
   const client = await getWhatsAppClient();
-  await client.sendTextMessage(phone, body);
-  await saveMessage(conversationId, MessageDirection.OUTBOUND, MessageType.TEXT, body, {
+  await client.sendTextMessage(phone, safeBody);
+  await saveMessage(conversationId, MessageDirection.OUTBOUND, MessageType.TEXT, safeBody, {
     senderType,
     adminUserId: options?.adminUserId ?? null,
   });
@@ -1104,14 +1107,17 @@ export async function notifyPaymentConfirmed(orderId: string): Promise<void> {
  * mensaje configurado (ej: RECEIVED, que ya se anuncia al crear el pedido), no hace nada.
  */
 export async function notifyOrderStatusChange(orderId: string, status: string): Promise<void> {
-  const buildMessage = ORDER_STATUS_CUSTOMER_MESSAGE[status];
-  if (!buildMessage) return;
-
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { contact: true } });
   if (!order) return;
+  const message = buildOrderStatusCustomerMessage({
+    status,
+    orderCode: order.code,
+    deliveryType: order.deliveryType as DeliveryType,
+  });
+  if (!message) return;
 
   const { conversation } = await getOrCreateActiveConversation(order.contactId);
-  await sendAndLog(conversation.id, order.contact.phone, buildMessage(order.code));
+  await sendAndLog(conversation.id, order.contact.phone, message);
 
   // Pedido cerrado (entregado/cancelado): archivamos la conversacion de una vez,
   // igual que al crear el pedido. Si el cliente vuelve a escribir, sesion nueva.
@@ -1178,7 +1184,7 @@ export async function notifyOrderCorrection(orderId: string): Promise<void> {
 
   const message = await generateResponse({
     facts: [
-      `El pedido ${order.code} se corrigio. Le pedimos disculpas al cliente por el error.`,
+      `El pedido ${order.code} se corrigio. Le pedimos disculpas por el error.`,
       `Pedido corregido:`,
       ...itemLines,
       `Total: ${formatCurrency(order.total, settings.currency)}.`,
@@ -2882,7 +2888,7 @@ async function runOrderFlowTurn(params: {
     price: p.price,
     categoryName: drinksCategory!.categoryName,
   }));
-  const sidesCategory = await findCategoryMatch("acompañantes");
+  const sidesCategory = await findCategoryMatch("acompanantes");
   const availableSides = (sidesCategory?.products ?? []).map((p) => ({
     id: p.id,
     name: p.name,

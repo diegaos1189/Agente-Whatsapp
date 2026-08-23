@@ -25,6 +25,7 @@ import {
   isRegionalConfirmation,
   normalizeLocalizedText,
 } from "../src/modules/localization/localeService.js";
+import { repairTextEncodingArtifacts } from "../src/utils/text.js";
 import { resolveProductReferenceFromProducts } from "../src/modules/products/productService.js";
 import { parseStructuredCartInstruction, resolveDistributedFlavorSelection } from "../src/modules/conversation/structuredCart.js";
 import { processWhatsAppAudio } from "../src/modules/conversation/whatsappAudioService.js";
@@ -219,5 +220,15 @@ describe("golden conversations Antioquia/es-CO", () => {
       }),
     });
     expect(result.normalizedText).toBe("combo con papas y gaseosa");
+  });
+
+  it("GOLDEN ANT 51: limpia signos dañados antes de responder", () => {
+    expect(repairTextEncodingArtifacts("Ã‚Â¿Desea corregir el pedido para continuar?")).toBe(
+      "¿Desea corregir el pedido para continuar?",
+    );
+  });
+
+  it("GOLDEN ANT 52: repara texto dañado de acompanantes", () => {
+    expect(repairTextEncodingArtifacts("acompaÃ±antes")).toBe("acompañantes");
   });
 });

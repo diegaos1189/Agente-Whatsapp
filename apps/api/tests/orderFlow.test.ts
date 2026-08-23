@@ -357,6 +357,62 @@ describe("decideOrderFlow", () => {
     expect(confirmed.nextState.step).toBe(OrderFlowStep.DONE);
   });
 
+  it("si el cliente cambia a recoger durante CONFIRMING, conserva carrito y vuelve a confirmar", () => {
+    const state = {
+      ...initialOrderFlowState,
+      step: OrderFlowStep.CONFIRMING,
+      cart: [{ productId: "p1", productName: "Pollo Frito 8 piezas", quantity: 1, unitPrice: 52000 }],
+      deliveryType: "DELIVERY" as const,
+      address: "Calle 1 # 2-3",
+      neighborhood: "Centro",
+      paymentMethod: "CASH" as const,
+    };
+
+    const decision = decideOrderFlow({
+      state,
+      intent: Intent.PROVIDE_INFO,
+      entities: { ...emptyEntities, deliveryType: "PICKUP" },
+      matchedProduct: null,
+      matchedSides: [],
+      unmatchedSideTexts: [],
+      businessDeliveryFee: 5000,
+      currency: "COP",
+    });
+
+    expect(decision.nextState.step).toBe(OrderFlowStep.CONFIRMING);
+    expect(decision.nextState.deliveryType).toBe("PICKUP");
+    expect(decision.nextState.address).toBeNull();
+    expect(decision.askNext).toContain("Confirma");
+  });
+
+  it("si el cliente corrige direccion en CONFIRMING, actualiza el dato sin perder el pedido", () => {
+    const state = {
+      ...initialOrderFlowState,
+      step: OrderFlowStep.CONFIRMING,
+      cart: [{ productId: "p1", productName: "Pollo Frito 8 piezas", quantity: 1, unitPrice: 52000 }],
+      deliveryType: "DELIVERY" as const,
+      address: "Calle vieja",
+      neighborhood: "Centro",
+      paymentMethod: "CASH" as const,
+    };
+
+    const decision = decideOrderFlow({
+      state,
+      intent: Intent.PROVIDE_INFO,
+      entities: { ...emptyEntities, address: "Cra 50 #20-30", neighborhood: "Laureles" },
+      matchedProduct: null,
+      matchedSides: [],
+      unmatchedSideTexts: [],
+      businessDeliveryFee: 5000,
+      currency: "COP",
+    });
+
+    expect(decision.nextState.step).toBe(OrderFlowStep.CONFIRMING);
+    expect(decision.nextState.address).toBe("Cra 50 #20-30");
+    expect(decision.nextState.neighborhood).toBe("Laureles");
+    expect(decision.nextState.cart).toHaveLength(1);
+  });
+
   it("cancela el pedido y reinicia el estado desde cualquier paso intermedio", () => {
     const state = { ...initialOrderFlowState, step: OrderFlowStep.ASK_ADDRESS };
     const decision = decideOrderFlow({

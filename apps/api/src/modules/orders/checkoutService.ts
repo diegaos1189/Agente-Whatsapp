@@ -15,8 +15,11 @@ export interface CheckoutValidationError {
     | "DELIVERY_DISABLED"
     | "PICKUP_DISABLED"
     | "ADDRESS_REQUIRED"
+    | "ADDRESS_INCOMPLETE"
+    | "NEIGHBORHOOD_REQUIRED"
     | "DELIVERY_OUT_OF_COVERAGE"
     | "DELIVERY_MINIMUM_NOT_MET"
+    | "CONTACT_PHONE_INVALID"
     | "PAYMENT_METHOD_REQUIRED"
     | "PAYMENT_METHOD_INVALID"
     | "PRODUCT_NOT_FOUND"
@@ -62,6 +65,11 @@ export interface CheckoutValidationResult {
   pricing: CartPricingResult | null;
 }
 
+export interface CheckoutRecoveryPrompt {
+  facts: string[];
+  askNext: string;
+}
+
 function mapPricingIssue(issue: PricingValidationIssue): CheckoutValidationError {
   return {
     code: issue.code,
@@ -85,6 +93,93 @@ function addressMatchesCoverage(
   if (coverageKeywords.length === 0) return true;
   const haystack = normalize(`${address ?? ""} ${neighborhood ?? ""}`);
   return coverageKeywords.some((keyword) => haystack.includes(normalize(keyword)));
+}
+
+function addressLooksComplete(address: string | null): boolean {
+  if (!address) return false;
+  const trimmed = address.trim();
+  if (trimmed.length < 10) return false;
+  if (!/\d/.test(trimmed)) return false;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  return words.length >= 3;
+}
+
+function hasNeighborhood(neighborhood: string | null): boolean {
+  return Boolean(neighborhood?.trim());
+}
+
+function isValidContactPhone(contactPhone: string | null): boolean {
+  if (!contactPhone) return true;
+  const digits = contactPhone.replace(/\D/g, "");
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+export function buildCheckoutRecoveryPrompt(params: {
+  errors: CheckoutValidationError[];
+  state: OrderFlowState;
+  acceptsPickup: boolean;
+}): CheckoutRecoveryPrompt {
+  const { errors, state, acceptsPickup } = params;
+  const codes = new Set(errors.map((error) => error.code));
+
+  if (codes.has("ADDRESS_REQUIRED") || codes.has("ADDRESS_INCOMPLETE")) {
+    return {
+      facts: errors.map((error) => error.message),
+      askNext: "Comparta la direccion completa con calle, numero, barrio y una referencia para continuar.",
+    };
+  }
+
+  if (codes.has("NEIGHBORHOOD_REQUIRED")) {
+    return {
+      facts: errors.map((error) => error.message),
+      askNext: "¿Me comparte el barrio del domicilio para validar la cobertura?",
+    };
+  }
+
+  if (codes.has("CONTACT_PHONE_INVALID")) {
+    return {
+      facts: errors.map((error) => error.message),
+      askNext: "¿Me confirma el numero de contacto del domiciliario? Puede escribirlo solo con numeros.",
+    };
+  }
+
+  if (codes.has("DELIVERY_OUT_OF_COVERAGE")) {
+    return {
+      facts: errors.map((error) => error.message),
+      askNext: acceptsPickup
+        ? "Si quiere, puede enviarme otra direccion con barrio o decirme que prefiere recoger en el local."
+        : "Si quiere, puede enviarme otra direccion con barrio para revisar una alternativa cercana.",
+    };
+  }
+
+  if (codes.has("DELIVERY_MINIMUM_NOT_MET")) {
+    return {
+      facts: errors.map((error) => error.message),
+      askNext: acceptsPickup
+        ? "Puede agregar algo mas al pedido o decirme si prefiere recoger en el local."
+        : "Puede agregar algo mas al pedido para llegar al minimo de domicilio.",
+    };
+  }
+
+  if (codes.has("PAYMENT_METHOD_REQUIRED") || codes.has("PAYMENT_METHOD_INVALID")) {
+    return {
+      facts: errors.map((error) => error.message),
+      askNext: "¿Me confirma como va a pagar para poder cerrar el pedido?",
+    };
+  }
+
+  if (codes.has("DELIVERY_TYPE_REQUIRED")) {
+    return {
+      facts: errors.map((error) => error.message),
+      askNext: "¿Su pedido es para domicilio o para recoger en el local?",
+    };
+  }
+
+  return {
+    facts: errors.map((error) => error.message),
+    askNext:
+      state.step === "CONFIRMING" ? "¿Desea corregir el pedido para continuar?" : "Comparta el dato faltante para continuar con el pedido.",
+  };
 }
 
 export function computeCheckoutFingerprint(state: OrderFlowState, activeCart: StructuredCartState | null): string {
@@ -155,12 +250,31 @@ export async function validateCheckout(params: {
   if (state.deliveryType === "DELIVERY") {
     if (!state.address) {
       errors.push({ code: "ADDRESS_REQUIRED", message: "Necesito la direccion completa para el domicilio." });
+    } else if (!addressLooksComplete(state.address)) {
+      errors.push({
+        code: "ADDRESS_INCOMPLETE",
+        message: "La direccion parece incompleta. Comparta calle, numero y un dato claro para ubicar el domicilio.",
+      });
+    }
+
+    if (!hasNeighborhood(state.neighborhood)) {
+      errors.push({
+        code: "NEIGHBORHOOD_REQUIRED",
+        message: "Tambien necesito el barrio para validar la cobertura del domicilio.",
+      });
     } else if (!addressMatchesCoverage(state.address, state.neighborhood, settings.deliveryCoverageKeywords)) {
       errors.push({
         code: "DELIVERY_OUT_OF_COVERAGE",
         message: "La direccion indicada esta fuera de nuestra cobertura actual.",
       });
     }
+  }
+
+  if (!isValidContactPhone(state.contactPhone)) {
+    errors.push({
+      code: "CONTACT_PHONE_INVALID",
+      message: "El numero de contacto para el domiciliario no parece valido.",
+    });
   }
 
   if (!state.paymentMethod) {

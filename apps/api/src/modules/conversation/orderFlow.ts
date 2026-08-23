@@ -209,6 +209,60 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     };
   }
 
+  if (state.step === OrderFlowStep.CONFIRMING) {
+    const hasCheckoutFieldUpdate = Boolean(
+      entities.deliveryType || entities.address || entities.neighborhood || entities.reference || entities.contactPhone || entities.paymentMethod,
+    );
+
+    if (hasCheckoutFieldUpdate) {
+      const nextDeliveryType = entities.deliveryType ?? state.deliveryType;
+      const nextPaymentMethod =
+        entities.paymentMethod && acceptedPaymentMethods.includes(entities.paymentMethod) ? entities.paymentMethod : state.paymentMethod;
+      const nextStateBase: OrderFlowState = {
+        ...state,
+        deliveryType: nextDeliveryType,
+        paymentMethod: nextPaymentMethod,
+        address: nextDeliveryType === "PICKUP" ? null : entities.address ?? state.address,
+        neighborhood: nextDeliveryType === "PICKUP" ? null : entities.neighborhood ?? state.neighborhood,
+        reference: nextDeliveryType === "PICKUP" ? null : entities.reference ?? state.reference,
+        contactPhone: nextDeliveryType === "PICKUP" ? null : entities.contactPhone ?? state.contactPhone,
+      };
+
+      if (nextDeliveryType === "DELIVERY" && !nextStateBase.address) {
+        return {
+          nextState: { ...nextStateBase, step: OrderFlowStep.ASK_ADDRESS },
+          facts: ["Listo, cambio su pedido a domicilio."],
+          askNext:
+            "Perfecto, ¿cual es su direccion completa, barrio y un punto de referencia? Si el domiciliario debe llamar a un numero distinto a este de WhatsApp, compartalo tambien.",
+          readyToCreateOrder: false,
+          cancelled: false,
+        };
+      }
+
+      if (!nextStateBase.paymentMethod) {
+        return {
+          nextState: { ...nextStateBase, step: OrderFlowStep.ASK_PAYMENT_METHOD },
+          facts:
+            nextDeliveryType === "PICKUP"
+              ? ["Listo, cambio su pedido para recoger en el local."]
+              : ["Actualice los datos de entrega de su pedido."],
+          askNext: buildPaymentMethodAskNext(acceptedPaymentMethods),
+          readyToCreateOrder: false,
+          cancelled: false,
+        };
+      }
+
+      const deliveryFee = nextStateBase.deliveryType === "DELIVERY" ? businessDeliveryFee : 0;
+      return {
+        nextState: { ...nextStateBase, step: OrderFlowStep.CONFIRMING },
+        facts: summarizeCart(nextStateBase, deliveryFee, currency),
+        askNext: "¿Confirma su pedido asi?",
+        readyToCreateOrder: false,
+        cancelled: false,
+      };
+    }
+  }
+
   // El cliente esta mas alla de "eligiendo el primer producto" (ya se le pregunto
   // domicilio/direccion/pago/confirmacion) pero manda un mensaje que claramente es
   // OTRO pedido (matchea un producto del menu). En vez de trabarse re-preguntando

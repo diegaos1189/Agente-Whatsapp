@@ -14,6 +14,7 @@ vi.mock("../src/modules/products/productService.js", () => ({
 }));
 
 import {
+  buildCheckoutRecoveryPrompt,
   buildEmptyCheckoutState,
   computeCheckoutFingerprint,
   invalidateCheckoutState,
@@ -228,6 +229,70 @@ describe("checkoutService", () => {
     expect(result.errors[0]?.code).toBe("DELIVERY_OUT_OF_COVERAGE");
   });
 
+  it("rechaza direccion de delivery incompleta", async () => {
+    setCatalog([pollo]);
+    const state = {
+      ...initialOrderFlowState,
+      cart: [{ productId: pollo.id, productName: pollo.name, quantity: 1, unitPrice: pollo.price }],
+      deliveryType: "DELIVERY" as const,
+      paymentMethod: "CASH" as const,
+      address: "calle 10",
+      neighborhood: "Tablazo",
+    };
+    const result = await validateCheckout({
+      state,
+      activeCart: null,
+      settings: buildSettings({ deliveryCoverageKeywords: ["Tablazo"] }),
+      at: new Date("2026-08-21T15:00:00-05:00"),
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.code === "ADDRESS_INCOMPLETE")).toBe(true);
+  });
+
+  it("rechaza delivery sin barrio", async () => {
+    setCatalog([pollo]);
+    const state = {
+      ...initialOrderFlowState,
+      cart: [{ productId: pollo.id, productName: pollo.name, quantity: 1, unitPrice: pollo.price }],
+      deliveryType: "DELIVERY" as const,
+      paymentMethod: "CASH" as const,
+      address: "Cra 50 #20-30 apto 2",
+      neighborhood: null,
+    };
+    const result = await validateCheckout({
+      state,
+      activeCart: null,
+      settings: buildSettings(),
+      at: new Date("2026-08-21T15:00:00-05:00"),
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.code === "NEIGHBORHOOD_REQUIRED")).toBe(true);
+  });
+
+  it("rechaza telefono alterno invalido para domiciliario", async () => {
+    setCatalog([pollo]);
+    const state = {
+      ...initialOrderFlowState,
+      cart: [{ productId: pollo.id, productName: pollo.name, quantity: 1, unitPrice: pollo.price }],
+      deliveryType: "DELIVERY" as const,
+      paymentMethod: "CASH" as const,
+      address: "Cra 50 #20-30 apto 2",
+      neighborhood: "Tablazo",
+      contactPhone: "123",
+    };
+    const result = await validateCheckout({
+      state,
+      activeCart: null,
+      settings: buildSettings({ deliveryCoverageKeywords: ["Tablazo"] }),
+      at: new Date("2026-08-21T15:00:00-05:00"),
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((error) => error.code === "CONTACT_PHONE_INVALID")).toBe(true);
+  });
+
   it("rechaza delivery menor al pedido minimo", async () => {
     setCatalog([pollo]);
     const state = {
@@ -324,5 +389,25 @@ describe("checkoutService", () => {
     expect(isCheckoutSummaryStale(prepared.checkout, updatedState, null)).toBe(true);
     expect(invalidateCheckoutState(prepared.checkout).version).toBeGreaterThan(prepared.checkout.version);
     expect(computeCheckoutFingerprint(state, null)).not.toBe(computeCheckoutFingerprint(updatedState, null));
+  });
+
+  it("guia al cliente a pasar a pickup cuando el delivery queda fuera de cobertura", () => {
+    const prompt = buildCheckoutRecoveryPrompt({
+      errors: [{ code: "DELIVERY_OUT_OF_COVERAGE", message: "La direccion indicada esta fuera de nuestra cobertura actual." }],
+      state: { ...initialOrderFlowState, step: "CONFIRMING", deliveryType: "DELIVERY" as const },
+      acceptsPickup: true,
+    });
+
+    expect(prompt.askNext).toContain("recoger en el local");
+  });
+
+  it("pide barrio de forma especifica cuando falta ese dato", () => {
+    const prompt = buildCheckoutRecoveryPrompt({
+      errors: [{ code: "NEIGHBORHOOD_REQUIRED", message: "Tambien necesito el barrio para validar la cobertura del domicilio." }],
+      state: { ...initialOrderFlowState, step: "CONFIRMING", deliveryType: "DELIVERY" as const },
+      acceptsPickup: true,
+    });
+
+    expect(prompt.askNext).toContain("barrio");
   });
 });
