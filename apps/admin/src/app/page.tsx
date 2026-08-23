@@ -1,6 +1,8 @@
 import { apiServerFetch } from "@/lib/apiServer";
 import type { BusinessSettingsDTO } from "@pollos/shared";
 
+export const dynamic = "force-dynamic";
+
 const DAY_LABELS_ES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
