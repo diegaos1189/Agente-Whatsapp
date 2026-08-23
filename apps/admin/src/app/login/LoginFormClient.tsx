@@ -53,8 +53,8 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
         display: "flex",
         flexDirection: "column",
         justifyContent: "center",
-        background: "linear-gradient(160deg, #fdf6f0 0%, #f5f5f7 45%, #f5f5f7 100%)",
-        color: "#1d1d1f",
+        background: "linear-gradient(160deg, #fffbec 0%, #f5f5f6 45%, #f5f5f6 100%)",
+        color: "#252527",
         padding: "48px 24px",
       }}
     >
@@ -73,8 +73,8 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
           <span
             style={{
               display: "inline-block",
-              background: "rgba(255, 95, 61, 0.1)",
-              color: "#ff5f3d",
+              background: "rgba(49, 167, 27, 0.1)",
+              color: "#31a71b",
               fontSize: 12,
               fontWeight: 700,
               padding: "5px 12px",
@@ -115,8 +115,8 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
                     width: 28,
                     height: 28,
                     borderRadius: 8,
-                    background: "rgba(255, 95, 61, 0.1)",
-                    color: "#ff5f3d",
+                    background: "rgba(49, 167, 27, 0.1)",
+                    color: "#31a71b",
                     flexShrink: 0,
                   }}
                 >
@@ -207,8 +207,8 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
             style={{
               background:
                 loading || !username || !password
-                  ? "#f5c4ac"
-                  : "linear-gradient(135deg, #ff8a3d, #ff5f3d)",
+                  ? "#bfe6b5"
+                  : "linear-gradient(135deg, #3fbf25, #2a8f17)",
               color: "#ffffff",
               border: "none",
               borderRadius: 999,
@@ -225,7 +225,7 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
       </div>
 
       <p style={{ textAlign: "center", color: "#6e6e73", fontSize: 12, marginTop: 56 }}>
-        Creado por <span style={{ color: "#ff5f3d", fontWeight: 700 }}>KenzyGroup S.A.S</span>
+        Creado por <span style={{ color: "#31a71b", fontWeight: 700 }}>KenzyGroup S.A.S</span>
       </p>
     </div>
   );

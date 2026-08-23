@@ -1,18 +1,19 @@
 :root {
-  --bg: #f5f5f7;
+  --bg: #f5f5f6;
   --surface: rgba(255, 255, 255, 0.72);
   --surface-solid: #ffffff;
   --border: rgba(0, 0, 0, 0.08);
   --border-strong: rgba(0, 0, 0, 0.12);
-  --text: #1d1d1f;
-  --text-muted: #6e6e73;
-  --accent: #0071e3;
-  --accent-hover: #0077ed;
-  --accent-soft: rgba(0, 113, 227, 0.1);
+  --text: #252527;
+  --text-muted: #4d4c52;
+  --accent: #31a71b;
+  --accent-hover: #2a8f17;
+  --accent-soft: #eaf6e8;
+  --warm-soft: #fffbec;
   --danger: #ff3b30;
   --danger-soft: rgba(255, 59, 48, 0.1);
-  --success: #34c759;
-  --success-soft: rgba(52, 199, 89, 0.12);
+  --success: #31a71b;
+  --success-soft: #eaf6e8;
   --warning-soft: rgba(255, 149, 0, 0.14);
   --radius-lg: 18px;
   --radius-md: 12px;
@@ -35,9 +36,9 @@ html { font-size: clamp(14px, 1vw + 12px, 16px); }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-family: inherit;
   /* Degradado sutil en vez de gris plano — mismo tono de fondo, un poco de vida sin perder legibilidad. */
-  background: linear-gradient(160deg, #fdf6f0 0%, var(--bg) 45%, var(--bg) 100%);
+  background: linear-gradient(160deg, var(--warm-soft) 0%, var(--bg) 45%, var(--bg) 100%);
   background-attachment: fixed;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -764,10 +765,10 @@ a.link:hover { text-decoration: underline; }
 /* Boton CTA con mas color, para acciones principales (crear producto/promo/faq). Se aplica
    agregando la clase junto a la existente, ej: className="cta". */
 button.cta {
-  background: linear-gradient(135deg, #ff8a3d, #ff5f3d);
-  box-shadow: 0 4px 14px rgba(255, 95, 61, 0.35);
+  background: linear-gradient(135deg, #3fbf25, #2a8f17);
+  box-shadow: 0 4px 14px rgba(49, 167, 27, 0.35);
 }
-button.cta:hover { background: linear-gradient(135deg, #ff9a52, #ff6f4f); }
+button.cta:hover { background: linear-gradient(135deg, #4bcf30, #31a71b); }
 
 /* Pedidos en tarjetas en vez de tabla — mismo espiritu que las de conversaciones. */
 .order-grid {
