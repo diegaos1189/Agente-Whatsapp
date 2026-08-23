@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import { OrderStatus, DeliveryType, PaymentMethod, PaymentStatus } from "@pollos/shared";
-import { requirePermission } from "../modules/adminUsers/adminAuth.js";
+import { requirePermission, requireAnyPermission } from "../modules/adminUsers/adminAuth.js";
 import {
   toOrderDTO,
   updateOrderStatus,
@@ -56,7 +56,8 @@ const manualOrderSchema = z.object({
 
 export async function orderRoutes(app: FastifyInstance) {
   app.get("/api/orders", async (request) => {
-    requirePermission(request, "orders");
+    // La pantalla de cocina lista pedidos con permiso "kitchen", sin necesitar "orders".
+    requireAnyPermission(request, ["orders", "kitchen"]);
     const query = z.object({ status: z.string().optional(), contactId: z.string().optional() }).parse(request.query);
 
     const orders = await prisma.order.findMany({
@@ -223,9 +224,15 @@ export async function orderRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/orders/:id/status", async (request, reply) => {
-    requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = z.object({ status: z.enum(ORDER_STATUS_VALUES), note: z.string().optional() }).parse(request.body);
+    // Cocina solo puede marcar "Listo" (READY) con el permiso "kitchen"; cualquier otro
+    // cambio de estado sigue exigiendo "orders".
+    if (body.status === "READY") {
+      requireAnyPermission(request, ["orders", "kitchen"]);
+    } else {
+      requirePermission(request, "orders");
+    }
 
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });

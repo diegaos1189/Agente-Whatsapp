@@ -159,7 +159,8 @@ function extractPendingOrder(context: unknown): PendingOrderDTO | null {
 }
 
 export async function conversationRoutes(app: FastifyInstance) {
-  app.get("/api/conversations", async () => {
+  app.get("/api/conversations", async (request) => {
+    requireConversationPermission(getAdminActor(request));
     const conversations = await prisma.conversation.findMany({
       where: { status: { not: ConversationStatus.CLOSED } },
       orderBy: { lastMessageAt: "desc" },
@@ -191,6 +192,7 @@ export async function conversationRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/conversations/:id", async (request, reply) => {
+    requireConversationPermission(getAdminActor(request));
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const conversation = await prisma.conversation.findUnique({
       where: { id },
@@ -215,6 +217,7 @@ export async function conversationRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/conversations/:id/messages", async (request, reply) => {
+    requireConversationPermission(getAdminActor(request));
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const conversation = await prisma.conversation.findUnique({ where: { id } });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });

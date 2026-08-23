@@ -48,6 +48,7 @@ export const ROUTE_PERMISSIONS: Array<{ prefix: string; permission: PermissionKe
   { prefix: "/conversations", permission: "conversations" },
   { prefix: "/orders", permission: "orders" },
   { prefix: "/products", permission: "products" },
+  { prefix: "/recommendations", permission: "products" },
   { prefix: "/promotions", permission: "promotions" },
   { prefix: "/faqs", permission: "faqs" },
   { prefix: "/kitchen", permission: "kitchen" },
