@@ -1,5 +1,6 @@
 import { apiServerFetch } from "@/lib/apiServer";
 import type { BusinessSettingsDTO } from "@pollos/shared";
+import { WhatsAppButton } from "./WhatsAppButton";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export default async function LandingPage() {
           )}
           <span style={{ fontWeight: 700, fontSize: "1.125rem" }}>{name}</span>
         </div>
-        <a
+        <WhatsAppButton
           href={chatLink}
           style={{
             background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
@@ -62,7 +63,7 @@ export default async function LandingPage() {
           }}
         >
           Pedir por WhatsApp
-        </a>
+        </WhatsAppButton>
       </header>
 
       {/* Hero */}
