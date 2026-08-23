@@ -9,7 +9,7 @@ export type OpeningHours = Partial<Record<WeekdayKey, { open: string; close: str
 let settingsCache: { value: BusinessSettingsDTO; expiresAt: number } | null = null;
 const CACHE_TTL_MS = 30_000;
 
-function toDTO(row: NonNullable<Awaited<ReturnType<typeof prisma.businessSettings.findFirst>>>): BusinessSettingsDTO {
+function toDTO(row: any): BusinessSettingsDTO {
   return {
     id: row.id,
     restaurantName: row.restaurantName,
@@ -45,6 +45,11 @@ function toDTO(row: NonNullable<Awaited<ReturnType<typeof prisma.businessSetting
     whatsappAppSecret: row.whatsappAppSecret,
     whatsappVerifyToken: row.whatsappVerifyToken,
     whatsappApiVersion: row.whatsappApiVersion,
+    reactivationEnabled: row.reactivationEnabled,
+    reactivationTemplateName: row.reactivationTemplateName,
+    reactivationTemplateLanguage: row.reactivationTemplateLanguage,
+    reactivationDormantDays: row.reactivationDormantDays,
+    reactivationCooldownDays: row.reactivationCooldownDays,
   };
 }
 

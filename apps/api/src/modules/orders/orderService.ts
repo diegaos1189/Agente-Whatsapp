@@ -94,6 +94,7 @@ export interface OperationalRiskAuditHit {
   orderId: string;
   reason: OrderOperationalAlert["reason"];
   note: string;
+  delayMinutes: number;
 }
 
 export interface ActiveOrderOperationalAlertDTO {
@@ -470,7 +471,7 @@ export async function auditOrdersForOperationalRisk(params: {
       },
     });
     flagged += 1;
-    hits.push({ orderId: order.id, reason: alert.reason, note: alert.note });
+    hits.push({ orderId: order.id, reason: alert.reason, note: alert.note, delayMinutes: alert.delayMinutes });
   }
 
   return { flagged, hits };

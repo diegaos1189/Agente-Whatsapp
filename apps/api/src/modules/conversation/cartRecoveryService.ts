@@ -14,6 +14,10 @@ import { canBotAutoReply } from "./conversationHandoff.js";
 const RECOVERY_SCAN_INTERVAL_MS = 30_000;
 const RECOVERY_LEASE_TTL_MS = 60_000;
 const MAX_DUE_RECOVERIES_PER_TICK = 20;
+const ACTIVE_CONVERSATION_WINDOW_MINUTES = 30;
+const RECOVERY_SAFETY_BUFFER_MINUTES = 2;
+const MAX_ACTIVE_WINDOW_RECOVERY_DELAY_MINUTES =
+  ACTIVE_CONVERSATION_WINDOW_MINUTES - RECOVERY_SAFETY_BUFFER_MINUTES;
 const OPT_OUT_PATTERNS = [
   /\bno me escriban\b/i,
   /\bno me escriba\b/i,
@@ -106,6 +110,10 @@ export function isCartRecoveryResumeMessage(text: string): boolean {
 
 export function isCartRecoveryCancelMessage(text: string): boolean {
   return CANCEL_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function getEffectiveCartRecoveryDelayMinutes(configuredDelayMinutes: number): number {
+  return Math.max(1, Math.min(configuredDelayMinutes, MAX_ACTIVE_WINDOW_RECOVERY_DELAY_MINUTES));
 }
 
 export function canSendCartRecovery(params: {
@@ -351,7 +359,7 @@ export async function syncCartRecoveryFromConversation(params: {
     contactId: params.contactId,
     context: params.context,
     lastMessageAt: params.lastMessageAt,
-    delayMinutes: settings.cartRecoveryDelayMinutes,
+    delayMinutes: getEffectiveCartRecoveryDelayMinutes(settings.cartRecoveryDelayMinutes),
   });
 }
 

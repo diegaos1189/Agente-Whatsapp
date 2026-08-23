@@ -117,6 +117,12 @@ import {
   shouldOfferUpsellThisTurn,
 } from "./recommendationService.js";
 import { markPaymentReported } from "../payments/paymentService.js";
+import {
+  isMarketingOptInMessage,
+  isMarketingOptOutMessage,
+  recordMarketingOptIn,
+  recordMarketingOptOut,
+} from "../campaigns/customerReactivationService.js";
 
 const ORDER_INTENTS: string[] = [Intent.ORDER_PRODUCT];
 // Fuera de horario se responde con el mensaje de "cerrado" para casi todo — la unica
@@ -1203,24 +1209,71 @@ export async function notifyOrderCorrection(orderId: string): Promise<void> {
 function buildOperationalRiskCustomerMessage(params: {
   orderCode: string;
   reason: "AWAITING_PAYMENT_STALE" | "RECEIVED_STALE" | "READY_FOR_PICKUP_STALE" | "READY_FOR_DISPATCH_STALE";
+  delayMinutes: number;
+  alertCount: number;
 }): string {
+  const severe = params.alertCount > 0;
   switch (params.reason) {
     case "AWAITING_PAYMENT_STALE":
-      return `Tu pedido ${params.orderCode} sigue pendiente de confirmacion de pago. Si ya hiciste la transferencia, envianos el comprobante por este chat para agilizarlo.`;
+      return severe
+        ? `Tu pedido ${params.orderCode} sigue pendiente de confirmacion de pago y ya lleva mas demora de la normal. Nuestro equipo lo revisara manualmente; si ya transferiste, envianos el comprobante por este chat.`
+        : `Tu pedido ${params.orderCode} sigue pendiente de confirmacion de pago. Si ya hiciste la transferencia, envianos el comprobante por este chat para agilizarlo.`;
     case "RECEIVED_STALE":
-      return `Tu pedido ${params.orderCode} sigue en preparacion. Tenemos una demora y estamos moviendonos para sacarlo lo antes posible.`;
+      return severe
+        ? `Tu pedido ${params.orderCode} sigue en preparacion y presenta una demora mayor a la esperada. Ya lo dejamos priorizado con el equipo para moverlo cuanto antes.`
+        : `Tu pedido ${params.orderCode} sigue en preparacion. Tenemos una demora y estamos moviendonos para sacarlo lo antes posible.`;
     case "READY_FOR_PICKUP_STALE":
-      return `Tu pedido ${params.orderCode} ya esta listo para recoger en el local. Cuando quieras, puedes pasar por el.`;
+      return severe
+        ? `Tu pedido ${params.orderCode} ya esta listo para recoger desde hace rato. Si necesitas que lo esperemos un poco mas, responde por este chat y lo coordinamos.`
+        : `Tu pedido ${params.orderCode} ya esta listo para recoger en el local. Cuando quieras, puedes pasar por el.`;
     case "READY_FOR_DISPATCH_STALE":
-      return `Tu pedido ${params.orderCode} ya esta listo y estamos coordinando el despacho. Gracias por esperarnos un momento mas.`;
+      return severe
+        ? `Tu pedido ${params.orderCode} ya esta listo, pero el despacho va mas lento de lo normal. Nuestro equipo ya esta revisando la salida para darte respuesta lo antes posible.`
+        : `Tu pedido ${params.orderCode} ya esta listo y estamos coordinando el despacho. Gracias por esperarnos un momento mas.`;
     default:
       return `Tu pedido ${params.orderCode} sigue en proceso.`;
+  }
+}
+
+function getOperationalAlertFollowupThreshold(
+  reason: "AWAITING_PAYMENT_STALE" | "RECEIVED_STALE" | "READY_FOR_PICKUP_STALE" | "READY_FOR_DISPATCH_STALE",
+): number {
+  switch (reason) {
+    case "AWAITING_PAYMENT_STALE":
+      return 20;
+    case "RECEIVED_STALE":
+      return 15;
+    case "READY_FOR_PICKUP_STALE":
+      return 30;
+    case "READY_FOR_DISPATCH_STALE":
+      return 15;
+    default:
+      return 20;
+  }
+}
+
+function shouldEscalateOperationalRisk(
+  reason: "AWAITING_PAYMENT_STALE" | "RECEIVED_STALE" | "READY_FOR_PICKUP_STALE" | "READY_FOR_DISPATCH_STALE",
+  delayMinutes: number,
+): boolean {
+  switch (reason) {
+    case "AWAITING_PAYMENT_STALE":
+      return delayMinutes >= 30;
+    case "RECEIVED_STALE":
+      return delayMinutes >= 20;
+    case "READY_FOR_PICKUP_STALE":
+      return delayMinutes >= 45;
+    case "READY_FOR_DISPATCH_STALE":
+      return delayMinutes >= 20;
+    default:
+      return false;
   }
 }
 
 export async function notifyOrderOperationalRisk(params: {
   orderId: string;
   reason: "AWAITING_PAYMENT_STALE" | "RECEIVED_STALE" | "READY_FOR_PICKUP_STALE" | "READY_FOR_DISPATCH_STALE";
+  delayMinutes: number;
 }): Promise<void> {
   const order = await prisma.order.findUnique({
     where: { id: params.orderId },
@@ -1229,20 +1282,38 @@ export async function notifyOrderOperationalRisk(params: {
   if (!order) return;
 
   const eventKey = `AUTO_CUSTOMER_ALERT:${params.reason}`;
-  const alreadySent = order.events.some((event) => event.note?.includes(eventKey));
-  if (alreadySent) return;
+  const sentAlerts = order.events.filter((event) => event.note?.includes(eventKey));
+  if (sentAlerts.length >= 2) return;
+  if (sentAlerts.length === 1 && params.delayMinutes < getOperationalAlertFollowupThreshold(params.reason)) return;
 
   const { conversation } = await getOrCreateActiveConversation(order.contactId);
   const message = buildOperationalRiskCustomerMessage({
     orderCode: order.code,
     reason: params.reason,
+    delayMinutes: params.delayMinutes,
+    alertCount: sentAlerts.length,
   });
   await sendAndLog(conversation.id, order.contact.phone, message);
+
+  const shouldEscalate = shouldEscalateOperationalRisk(params.reason, params.delayMinutes);
+  if (shouldEscalate) {
+    const escalationReason =
+      params.reason === "AWAITING_PAYMENT_STALE" ? HandoffReason.PAYMENT_ISSUE : HandoffReason.DELIVERY_PROBLEM;
+    await escalateToHuman({
+      conversationId: conversation.id,
+      phone: order.contact.phone,
+      customerName: order.contact.name,
+      reason: escalationReason,
+      lastMessage: `Atraso operativo serio en pedido ${order.code}: ${params.reason} (+${params.delayMinutes} min).`,
+      skipAutoMessage: true,
+    });
+  }
+
   await prisma.orderEvent.create({
     data: {
       orderId: order.id,
       status: order.status,
-      note: `${eventKey} ${message}`,
+      note: `${eventKey}:${sentAlerts.length + 1} ${message}`,
     },
   });
 }
@@ -1874,6 +1945,44 @@ async function handleTextMessageLegacy(
   const normalizedText = normalizeLocalizedText(text);
   const activeSentRecovery = await findLatestSentCartRecovery(conversationId);
   const inOrderFlowAlready = context.orderFlow.step !== OrderFlowStep.IDLE;
+
+  if (isMarketingOptInMessage(normalizedText)) {
+    await recordMarketingOptIn(contactId, "WHATSAPP_KEYWORD");
+    const replyText = await generateResponse({
+      facts: ["Listo, quedo autorizado para recibir promociones y novedades por WhatsApp."],
+      askNext: inOrderFlowAlready ? getPendingOrderQuestion(context.orderFlow, settings.acceptedPaymentMethods as PaymentMethod[]) : null,
+      businessName: settings.restaurantName,
+      tone: settings.assistantTone,
+    });
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        context: toJsonContext(buildPersistedConversationContext(context)),
+        failedAttempts: 0,
+      },
+    });
+    await sendAndLog(conversationId, phone, replyText, receivedAt);
+    return;
+  }
+
+  if (isMarketingOptOutMessage(normalizedText)) {
+    await recordMarketingOptOut(contactId, normalizedText);
+    const replyText = await generateResponse({
+      facts: ["Listo, no le enviaremos promociones automaticas por WhatsApp."],
+      askNext: inOrderFlowAlready ? getPendingOrderQuestion(context.orderFlow, settings.acceptedPaymentMethods as PaymentMethod[]) : null,
+      businessName: settings.restaurantName,
+      tone: settings.assistantTone,
+    });
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        context: toJsonContext(buildPersistedConversationContext(context)),
+        failedAttempts: 0,
+      },
+    });
+    await sendAndLog(conversationId, phone, replyText, receivedAt);
+    return;
+  }
 
   if (isCartRecoveryOptOutMessage(normalizedText)) {
     await recordCartRecoveryOptOut({

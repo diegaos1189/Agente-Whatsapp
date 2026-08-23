@@ -1,6 +1,6 @@
 import { prisma } from "../../db/prisma.js";
 import { OrderStatus } from "@pollos/shared";
-import type { MetricsDTO, RangeMetricsDTO } from "@pollos/shared";
+import type { CustomerSegmentCustomersDTO, MetricsDTO, RangeMetricsDTO } from "@pollos/shared";
 import { getBusinessSettings } from "../business/businessHoursService.js";
 
 /**
@@ -16,14 +16,18 @@ export async function getMetrics(): Promise<MetricsDTO> {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
   const [
     ordersToday,
     ordersLast7Days,
     ordersLast30Days,
     completedOrders,
+    commercialOrders,
+    customerOrders,
     ordersByStatusRaw,
     totalConversations30Days,
+    convertedConversations30Days,
     handoffConversations,
     revenueTodayAgg,
     revenueMonthAgg,
@@ -38,8 +42,34 @@ export async function getMetrics(): Promise<MetricsDTO> {
       where: { createdAt: { gte: thirtyDaysAgo }, status: { not: OrderStatus.CANCELLED } },
       select: { total: true, createdAt: true, events: { select: { status: true, createdAt: true } } },
     }),
+    prisma.order.findMany({
+      where: { createdAt: { gte: thirtyDaysAgo }, status: { not: OrderStatus.CANCELLED } },
+      select: {
+        total: true,
+        createdAt: true,
+        deliveryType: true,
+        paymentMethod: true,
+        contactId: true,
+        items: { select: { productName: true, quantity: true, unitPrice: true } },
+      },
+    }),
+    prisma.order.findMany({
+      where: { status: { not: OrderStatus.CANCELLED } },
+      select: { contactId: true, createdAt: true },
+      orderBy: [{ contactId: "asc" }, { createdAt: "asc" }],
+    }),
     prisma.order.groupBy({ by: ["status"], _count: { status: true }, where: { createdAt: { gte: thirtyDaysAgo } } }),
     prisma.conversation.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.conversation.count({
+      where: {
+        createdAt: { gte: thirtyDaysAgo },
+        contact: {
+          orders: {
+            some: { createdAt: { gte: thirtyDaysAgo }, status: { not: OrderStatus.CANCELLED } },
+          },
+        },
+      },
+    }),
     prisma.handoff.findMany({
       where: { createdAt: { gte: thirtyDaysAgo } },
       select: { conversationId: true },
@@ -121,6 +151,64 @@ export async function getMetrics(): Promise<MetricsDTO> {
       ? Math.round(prepTimesMinutes.reduce((a, b) => a + b, 0) / prepTimesMinutes.length)
       : null;
 
+  const productSales = new Map<string, { quantity: number; revenue: number }>();
+  const peakHours = new Map<number, number>();
+  const paymentMix = new Map<string, { label: string; count: number; revenue: number }>();
+  const deliveryMix = new Map<string, { label: string; count: number; revenue: number }>();
+  const customerOrderDates = new Map<string, Date[]>();
+  const lastOrderByContact = new Map<string, Date>();
+  const orders30ByContact = new Map<string, number>();
+  const orders90ByContact = new Map<string, number>();
+
+  for (const order of commercialOrders) {
+    const hour = order.createdAt.getHours();
+    peakHours.set(hour, (peakHours.get(hour) ?? 0) + 1);
+
+    const paymentKey = order.paymentMethod ?? "UNKNOWN";
+    const paymentLabel =
+      paymentKey === "CASH"
+        ? "Efectivo"
+        : paymentKey === "TRANSFER"
+          ? "Transferencia"
+          : paymentKey === "CARD_ON_DELIVERY"
+            ? "Datafono contraentrega"
+            : "Sin definir";
+    paymentMix.set(paymentKey, {
+      label: paymentLabel,
+      count: (paymentMix.get(paymentKey)?.count ?? 0) + 1,
+      revenue: (paymentMix.get(paymentKey)?.revenue ?? 0) + order.total,
+    });
+
+    const deliveryKey = order.deliveryType;
+    const deliveryLabel = deliveryKey === "DELIVERY" ? "Domicilio" : "Recoger";
+    deliveryMix.set(deliveryKey, {
+      label: deliveryLabel,
+      count: (deliveryMix.get(deliveryKey)?.count ?? 0) + 1,
+      revenue: (deliveryMix.get(deliveryKey)?.revenue ?? 0) + order.total,
+    });
+
+    for (const item of order.items) {
+      const productName = item.productName ?? "Producto sin nombre";
+      productSales.set(productName, {
+        quantity: (productSales.get(productName)?.quantity ?? 0) + item.quantity,
+        revenue: (productSales.get(productName)?.revenue ?? 0) + item.quantity * item.unitPrice,
+      });
+    }
+  }
+
+  for (const order of customerOrders) {
+    const dates = customerOrderDates.get(order.contactId) ?? [];
+    dates.push(order.createdAt);
+    customerOrderDates.set(order.contactId, dates);
+    lastOrderByContact.set(order.contactId, order.createdAt);
+    if (order.createdAt >= thirtyDaysAgo) {
+      orders30ByContact.set(order.contactId, (orders30ByContact.get(order.contactId) ?? 0) + 1);
+    }
+    if (order.createdAt >= ninetyDaysAgo) {
+      orders90ByContact.set(order.contactId, (orders90ByContact.get(order.contactId) ?? 0) + 1);
+    }
+  }
+
   const deliveryMinutesToday: number[] = [];
   const deliveryMinutesThisMonth: number[] = [];
   for (const order of deliveredOrdersThisMonth) {
@@ -167,6 +255,54 @@ export async function getMetrics(): Promise<MetricsDTO> {
 
   const handoffRate =
     totalConversations30Days > 0 ? Math.round((handoffConversations.length / totalConversations30Days) * 100) : 0;
+  const conversationToOrderConversionRate =
+    totalConversations30Days > 0 ? Math.round((convertedConversations30Days / totalConversations30Days) * 100) : 0;
+
+  const topSellingProducts = [...productSales.entries()]
+    .map(([productName, values]) => ({ productName, quantity: values.quantity, revenue: values.revenue }))
+    .sort((a, b) => (b.quantity !== a.quantity ? b.quantity - a.quantity : b.revenue - a.revenue))
+    .slice(0, 5);
+
+  const peakOrderHours = [...peakHours.entries()]
+    .map(([hour, orderCount]) => ({ hour, orderCount }))
+    .sort((a, b) => (b.orderCount !== a.orderCount ? b.orderCount - a.orderCount : a.hour - b.hour))
+    .slice(0, 5);
+
+  const paymentMethodMix = [...paymentMix.entries()]
+    .map(([key, values]) => ({ key, label: values.label, count: values.count, revenue: values.revenue }))
+    .sort((a, b) => b.count - a.count);
+
+  const deliveryTypeMix = [...deliveryMix.entries()]
+    .map(([key, values]) => ({ key, label: values.label, count: values.count, revenue: values.revenue }))
+    .sort((a, b) => b.count - a.count);
+
+  const recentCustomersCount = [...lastOrderByContact.values()].filter((lastOrderAt) => lastOrderAt >= thirtyDaysAgo).length;
+  const frequentCustomersCount = [...orders90ByContact.values()].filter((orderCount) => orderCount >= 3).length;
+  const dormantCustomersCount = [...lastOrderByContact.values()].filter((lastOrderAt) => lastOrderAt < thirtyDaysAgo).length;
+  const repeatCustomers30Days = [...orders30ByContact.values()].filter((orderCount) => orderCount >= 2).length;
+  const repeatPurchaseRate30Days =
+    recentCustomersCount > 0 ? Math.round((repeatCustomers30Days / recentCustomersCount) * 100) : 0;
+
+  const daysBetweenOrdersSamples: number[] = [];
+  for (const orderDates of customerOrderDates.values()) {
+    for (let index = 1; index < orderDates.length; index += 1) {
+      const previousOrder = orderDates[index - 1];
+      const currentOrder = orderDates[index];
+      if (!previousOrder || !currentOrder) continue;
+      const days = (currentOrder.getTime() - previousOrder.getTime()) / 86_400_000;
+      if (days >= 0) daysBetweenOrdersSamples.push(days);
+    }
+  }
+  const avgDaysBetweenOrders =
+    daysBetweenOrdersSamples.length > 0
+      ? Math.round((daysBetweenOrdersSamples.reduce((acc, value) => acc + value, 0) / daysBetweenOrdersSamples.length) * 10) / 10
+      : null;
+
+  const customerSegments: MetricsDTO["customerSegments"] = [
+    { key: "recent", label: "Recientes", count: recentCustomersCount, description: "Compraron durante los ultimos 30 dias" },
+    { key: "frequent", label: "Frecuentes", count: frequentCustomersCount, description: "Hicieron 3 o mas pedidos en los ultimos 90 dias" },
+    { key: "dormant", label: "Dormidos", count: dormantCustomersCount, description: "Ya compraron antes, pero llevan mas de 30 dias sin volver" },
+  ];
 
   return {
     ordersToday,
@@ -194,6 +330,126 @@ export async function getMetrics(): Promise<MetricsDTO> {
     dispatchSampleCount: dispatchSlaMinutes.length,
     deliveryLegSlaMinutes: averageMinutes(deliveryLegSlaMinutes),
     deliveryLegSampleCount: deliveryLegSlaMinutes.length,
+    topSellingProducts,
+    peakOrderHours,
+    paymentMethodMix,
+    deliveryTypeMix,
+    conversationToOrderConversionRate,
+    convertedConversations30Days,
+    customerSegments,
+    repeatCustomers30Days,
+    repeatPurchaseRate30Days,
+    avgDaysBetweenOrders,
+  };
+}
+
+function calculateAverageDaysBetweenDates(orderDates: Date[]): number | null {
+  if (orderDates.length < 2) return null;
+  let totalDays = 0;
+  let sampleCount = 0;
+  for (let index = 1; index < orderDates.length; index += 1) {
+    const previousOrder = orderDates[index - 1];
+    const currentOrder = orderDates[index];
+    if (!previousOrder || !currentOrder) continue;
+    const days = (currentOrder.getTime() - previousOrder.getTime()) / 86_400_000;
+    if (days >= 0) {
+      totalDays += days;
+      sampleCount += 1;
+    }
+  }
+  if (sampleCount === 0) return null;
+  return Math.round((totalDays / sampleCount) * 10) / 10;
+}
+
+export async function getCustomerSegmentCustomers(limit = 12): Promise<CustomerSegmentCustomersDTO> {
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+  const customerOrders = await prisma.order.findMany({
+    where: { status: { not: OrderStatus.CANCELLED } },
+    select: {
+      contactId: true,
+      createdAt: true,
+      contact: { select: { name: true, phone: true } },
+    },
+    orderBy: [{ contactId: "asc" }, { createdAt: "asc" }],
+  });
+
+  const byContact = new Map<
+    string,
+    {
+      customerName: string | null;
+      phone: string;
+      orderDates: Date[];
+      ordersLast30Days: number;
+      ordersLast90Days: number;
+    }
+  >();
+
+  for (const order of customerOrders) {
+    const existing = byContact.get(order.contactId) ?? {
+      customerName: order.contact.name,
+      phone: order.contact.phone,
+      orderDates: [],
+      ordersLast30Days: 0,
+      ordersLast90Days: 0,
+    };
+    existing.customerName = order.contact.name;
+    existing.phone = order.contact.phone;
+    existing.orderDates.push(order.createdAt);
+    if (order.createdAt >= thirtyDaysAgo) existing.ordersLast30Days += 1;
+    if (order.createdAt >= ninetyDaysAgo) existing.ordersLast90Days += 1;
+    byContact.set(order.contactId, existing);
+  }
+
+  const recent: CustomerSegmentCustomersDTO["recent"] = [];
+  const frequent: CustomerSegmentCustomersDTO["frequent"] = [];
+  const dormant: CustomerSegmentCustomersDTO["dormant"] = [];
+
+  for (const [contactId, customer] of byContact.entries()) {
+    const lastOrderAt = customer.orderDates[customer.orderDates.length - 1];
+    if (!lastOrderAt) continue;
+    const daysSinceLastOrder = Math.max(0, Math.floor((now.getTime() - lastOrderAt.getTime()) / 86_400_000));
+    const dto: CustomerSegmentCustomersDTO["recent"][number] = {
+      contactId,
+      customerName: customer.customerName,
+      phone: customer.phone,
+      lastOrderAt: lastOrderAt.toISOString(),
+      daysSinceLastOrder,
+      totalOrders: customer.orderDates.length,
+      ordersLast30Days: customer.ordersLast30Days,
+      ordersLast90Days: customer.ordersLast90Days,
+      avgDaysBetweenOrders: calculateAverageDaysBetweenDates(customer.orderDates),
+    };
+
+    if (lastOrderAt >= thirtyDaysAgo) recent.push(dto);
+    if (customer.ordersLast90Days >= 3) frequent.push(dto);
+    if (lastOrderAt < thirtyDaysAgo) dormant.push(dto);
+  }
+
+  const sortByPriority = (
+    left: CustomerSegmentCustomersDTO["recent"][number],
+    right: CustomerSegmentCustomersDTO["recent"][number],
+  ) => {
+    if (right.ordersLast30Days !== left.ordersLast30Days) return right.ordersLast30Days - left.ordersLast30Days;
+    if (right.ordersLast90Days !== left.ordersLast90Days) return right.ordersLast90Days - left.ordersLast90Days;
+    return new Date(right.lastOrderAt).getTime() - new Date(left.lastOrderAt).getTime();
+  };
+
+  const sortDormant = (
+    left: CustomerSegmentCustomersDTO["dormant"][number],
+    right: CustomerSegmentCustomersDTO["dormant"][number],
+  ) => {
+    if (right.daysSinceLastOrder !== left.daysSinceLastOrder) return right.daysSinceLastOrder - left.daysSinceLastOrder;
+    if (right.totalOrders !== left.totalOrders) return right.totalOrders - left.totalOrders;
+    return new Date(right.lastOrderAt).getTime() - new Date(left.lastOrderAt).getTime();
+  };
+
+  return {
+    recent: recent.sort(sortByPriority).slice(0, limit),
+    frequent: frequent.sort(sortByPriority).slice(0, limit),
+    dormant: dormant.sort(sortDormant).slice(0, limit),
   };
 }
 

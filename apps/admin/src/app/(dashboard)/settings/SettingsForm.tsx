@@ -61,6 +61,11 @@ function buildFormState(settings: BusinessSettingsDTO) {
     whatsappAppSecret: settings.whatsappAppSecret,
     whatsappVerifyToken: settings.whatsappVerifyToken,
     whatsappApiVersion: settings.whatsappApiVersion,
+    reactivationEnabled: settings.reactivationEnabled,
+    reactivationTemplateName: settings.reactivationTemplateName,
+    reactivationTemplateLanguage: settings.reactivationTemplateLanguage,
+    reactivationDormantDays: settings.reactivationDormantDays,
+    reactivationCooldownDays: settings.reactivationCooldownDays,
   };
 }
 
@@ -104,6 +109,8 @@ export function SettingsForm({ settings, summaryPanel }: { settings: BusinessSet
           deliveryFee: Number(form.deliveryFee),
           estimatedPrepMinutes: Number(form.estimatedPrepMinutes),
           maxUpsellOffers: Number(form.maxUpsellOffers),
+          reactivationDormantDays: Number(form.reactivationDormantDays),
+          reactivationCooldownDays: Number(form.reactivationCooldownDays),
           openingHours,
         }),
       });
@@ -319,6 +326,63 @@ export function SettingsForm({ settings, summaryPanel }: { settings: BusinessSet
           <label>
             Mensaje fuera de horario
             <textarea rows={4} value={form.outOfHoursMessage} onChange={(e) => setForm({ ...form, outOfHoursMessage: e.target.value })} />
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section settings-full">
+        <h3>Campanas seguras WhatsApp</h3>
+        <p className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 13 }}>
+          Estas campanas solo deben usarse con clientes que dieron permiso para recibir promociones. Cuando el proveedor
+          es Meta, se enviaran unicamente mediante plantilla aprobada.
+        </p>
+        <div className="settings-fields-row">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, flexDirection: "row" }}>
+            <input
+              type="checkbox"
+              checked={form.reactivationEnabled}
+              onChange={(e) => setForm({ ...form, reactivationEnabled: e.target.checked })}
+            />
+            Activar reactivacion automatica de clientes dormidos
+          </label>
+          <label>
+            Nombre de plantilla aprobada en Meta
+            <input
+              value={form.reactivationTemplateName}
+              onChange={(e) => setForm({ ...form, reactivationTemplateName: e.target.value })}
+              placeholder="Ej: cliente_dormido_vuelve_hoy"
+            />
+          </label>
+          <label>
+            Idioma de plantilla
+            <input
+              value={form.reactivationTemplateLanguage}
+              onChange={(e) => setForm({ ...form, reactivationTemplateLanguage: e.target.value })}
+              placeholder="es_CO"
+              style={{ width: 120 }}
+            />
+          </label>
+        </div>
+        <div className="settings-fields-row">
+          <label>
+            Dias para considerar cliente dormido
+            <input
+              type="number"
+              min={7}
+              max={180}
+              value={form.reactivationDormantDays}
+              onChange={(e) => setForm({ ...form, reactivationDormantDays: Number(e.target.value) })}
+            />
+          </label>
+          <label>
+            Cooldown entre campanas al mismo cliente
+            <input
+              type="number"
+              min={7}
+              max={180}
+              value={form.reactivationCooldownDays}
+              onChange={(e) => setForm({ ...form, reactivationCooldownDays: Number(e.target.value) })}
+            />
           </label>
         </div>
       </section>

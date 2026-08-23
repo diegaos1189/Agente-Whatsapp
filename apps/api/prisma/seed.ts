@@ -23,6 +23,11 @@ async function main() {
       deliveryFee: 5000,
       estimatedPrepMinutes: 35,
       acceptsScheduledOrders: true,
+      reactivationEnabled: false,
+      reactivationTemplateName: "",
+      reactivationTemplateLanguage: "es_CO",
+      reactivationDormantDays: 30,
+      reactivationCooldownDays: 30,
       outOfHoursMessage:
         "Gracias por escribirnos. Nuestro horario de atencion es de 11:00 a. m. a 10:00 p. m., todos los dias. Puedes dejar tu pedido y lo procesamos apenas abramos.",
       welcomeMessage:

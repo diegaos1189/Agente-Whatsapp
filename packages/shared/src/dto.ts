@@ -245,6 +245,49 @@ export interface TransferAccountDTO {
   qrImage: string | null;
 }
 
+export interface ProductSalesMetricDTO {
+  productName: string;
+  quantity: number;
+  revenue: number;
+}
+
+export interface PeakHourMetricDTO {
+  hour: number;
+  orderCount: number;
+}
+
+export interface MixMetricDTO {
+  key: string;
+  label: string;
+  count: number;
+  revenue: number;
+}
+
+export interface CustomerSegmentMetricDTO {
+  key: string;
+  label: string;
+  count: number;
+  description: string;
+}
+
+export interface CustomerSegmentCustomerDTO {
+  contactId: string;
+  customerName: string | null;
+  phone: string;
+  lastOrderAt: string;
+  daysSinceLastOrder: number;
+  totalOrders: number;
+  ordersLast30Days: number;
+  ordersLast90Days: number;
+  avgDaysBetweenOrders: number | null;
+}
+
+export interface CustomerSegmentCustomersDTO {
+  recent: CustomerSegmentCustomerDTO[];
+  frequent: CustomerSegmentCustomerDTO[];
+  dormant: CustomerSegmentCustomerDTO[];
+}
+
 export interface MetricsDTO {
   ordersToday: number;
   ordersLast7Days: number;
@@ -272,6 +315,16 @@ export interface MetricsDTO {
   dispatchSampleCount: number;
   deliveryLegSlaMinutes: number | null;
   deliveryLegSampleCount: number;
+  topSellingProducts: ProductSalesMetricDTO[];
+  peakOrderHours: PeakHourMetricDTO[];
+  paymentMethodMix: MixMetricDTO[];
+  deliveryTypeMix: MixMetricDTO[];
+  conversationToOrderConversionRate: number;
+  convertedConversations30Days: number;
+  customerSegments: CustomerSegmentMetricDTO[];
+  repeatCustomers30Days: number;
+  repeatPurchaseRate30Days: number;
+  avgDaysBetweenOrders: number | null;
 }
 
 export interface OrderOperationalAlertDTO {
@@ -337,6 +390,11 @@ export interface BusinessSettingsDTO {
   whatsappAppSecret: string;
   whatsappVerifyToken: string;
   whatsappApiVersion: string;
+  reactivationEnabled: boolean;
+  reactivationTemplateName: string;
+  reactivationTemplateLanguage: string;
+  reactivationDormantDays: number;
+  reactivationCooldownDays: number;
 }
 
 export interface AdminUserDTO {

@@ -1,5 +1,5 @@
 import { apiServerFetch } from "@/lib/apiServer";
-import type { MetricsDTO } from "@pollos/shared";
+import type { CustomerSegmentCustomersDTO, MetricsDTO } from "@pollos/shared";
 import { DateRangeFilter } from "./DateRangeFilter";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -43,8 +43,47 @@ const SLA_STAGE_LABELS = [
   { key: "delivery", label: "Reparto hasta entrega", sampleKey: "deliveryLegSampleCount" as const, valueKey: "deliveryLegSlaMinutes" as const },
 ] as const;
 
+function formatSegmentTitle(segmentKey: keyof CustomerSegmentCustomersDTO): string {
+  if (segmentKey === "recent") return "Clientes recientes";
+  if (segmentKey === "frequent") return "Clientes frecuentes";
+  return "Clientes dormidos";
+}
+
+function formatSegmentPill(segmentKey: keyof CustomerSegmentCustomersDTO): string {
+  if (segmentKey === "recent") return "pill-success";
+  if (segmentKey === "frequent") return "pill-info";
+  return "pill-warning";
+}
+
+function renderCustomerRow(customer: CustomerSegmentCustomersDTO["recent"][number]) {
+  return (
+    <div key={customer.contactId} style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+      <div>
+        <div style={{ fontWeight: 700 }}>{customer.customerName || customer.phone}</div>
+        <div className="muted" style={{ fontSize: "0.75rem" }}>
+          {customer.customerName ? customer.phone : "Sin nombre registrado"}
+        </div>
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontWeight: 700 }}>{customer.daysSinceLastOrder} dias</div>
+        <div className="muted" style={{ fontSize: "0.75rem" }}>
+          Ultima compra hace {customer.daysSinceLastOrder} dias
+        </div>
+        <div className="muted" style={{ fontSize: "0.75rem" }}>
+          {customer.totalOrders} pedidos totales · {customer.ordersLast30Days} en 30 dias
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CUSTOMER_SEGMENT_KEYS = ["recent", "frequent", "dormant"] as const;
+
 export default async function MetricsPage() {
-  const metrics = await apiServerFetch<MetricsDTO>("/api/metrics");
+  const [metrics, customersBySegment] = await Promise.all([
+    apiServerFetch<MetricsDTO>("/api/metrics"),
+    apiServerFetch<CustomerSegmentCustomersDTO>("/api/metrics/customers?limit=8"),
+  ]);
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("es-419", { style: "currency", currency: metrics.currency, maximumFractionDigits: 0 }).format(amount);
@@ -152,6 +191,138 @@ export default async function MetricsPage() {
                 Muestras analizadas: {sampleCount}
               </div>
             </div>
+          );
+        })}
+      </div>
+
+      <h3 style={{ marginTop: "2rem" }}>Comercial</h3>
+      <div className="stat-grid">
+        <div className="stat-tile">
+          <div className="stat-label">Conversion conversacion a pedido</div>
+          <div className={`stat-value ${metrics.conversationToOrderConversionRate < 35 ? "warn" : "ok"}`}>
+            {metrics.conversationToOrderConversionRate}%
+          </div>
+          <div className="stat-sub">Conversaciones convertidas: {metrics.convertedConversations30Days}</div>
+        </div>
+      </div>
+
+      <div className="report-grid" style={{ marginTop: 16 }}>
+        <div className="report-card">
+          <div className="pill pill-success">Productos mas vendidos</div>
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            {metrics.topSellingProducts.length === 0 ? (
+              <div className="muted">Aun no hay datos suficientes.</div>
+            ) : (
+              metrics.topSellingProducts.map((product) => (
+                <div key={product.productName} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{product.productName}</div>
+                    <div className="muted" style={{ fontSize: "0.75rem" }}>
+                      {product.quantity} unidades
+                    </div>
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{formatCurrency(product.revenue)}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="report-card">
+          <div className="pill pill-info">Horas pico</div>
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            {metrics.peakOrderHours.length === 0 ? (
+              <div className="muted">Aun no hay datos suficientes.</div>
+            ) : (
+              metrics.peakOrderHours.map((slot) => (
+                <div key={slot.hour} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ fontWeight: 700 }}>{String(slot.hour).padStart(2, "0")}:00</div>
+                  <div className="muted">{slot.orderCount} pedidos</div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="report-grid" style={{ marginTop: 16 }}>
+        <div className="report-card">
+          <div className="pill pill-neutral">Metodos de pago</div>
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            {metrics.paymentMethodMix.map((item) => (
+              <div key={item.key} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{item.label}</div>
+                  <div className="muted" style={{ fontSize: "0.75rem" }}>
+                    {item.count} pedidos
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700 }}>{formatCurrency(item.revenue)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="report-card">
+          <div className="pill pill-neutral">Canal de entrega</div>
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            {metrics.deliveryTypeMix.map((item) => (
+              <div key={item.key} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{item.label}</div>
+                  <div className="muted" style={{ fontSize: "0.75rem" }}>
+                    {item.count} pedidos
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700 }}>{formatCurrency(item.revenue)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: "2rem" }}>Clientes y recompra</h3>
+      <div className="stat-grid">
+        <div className="stat-tile">
+          <div className="stat-label">Clientes que repiten (30 dias)</div>
+          <div className={`stat-value ${metrics.repeatPurchaseRate30Days < 25 ? "warn" : "ok"}`}>{metrics.repeatCustomers30Days}</div>
+          <div className="stat-sub">Tasa de recompra: {metrics.repeatPurchaseRate30Days}%</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-label">Dias promedio entre compras</div>
+          <div className="stat-value">{metrics.avgDaysBetweenOrders !== null ? `${metrics.avgDaysBetweenOrders} dias` : "-"}</div>
+          <div className="stat-sub">Promedio historico entre pedidos del mismo cliente</div>
+        </div>
+      </div>
+
+      <div className="report-grid" style={{ marginTop: 16 }}>
+        {metrics.customerSegments.map((segment) => (
+          <div key={segment.key} className="report-card">
+            <div className="pill pill-info">{segment.label}</div>
+            <div className="report-card-value" style={{ marginTop: 10 }}>
+              {segment.count}
+            </div>
+            <div className="muted" style={{ fontSize: "0.75rem", marginTop: 8 }}>
+              {segment.description}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="report-grid" style={{ marginTop: 16 }}>
+        {CUSTOMER_SEGMENT_KEYS.map((segmentKey) => {
+          const customers = customersBySegment[segmentKey];
+          return (
+          <div key={segmentKey} className="report-card">
+            <div className={`pill ${formatSegmentPill(segmentKey)}`}>{formatSegmentTitle(segmentKey)}</div>
+            <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+              {customers.length === 0 ? (
+                <div className="muted">No hay clientes en este segmento todavia.</div>
+              ) : (
+                customers.map((customer) => renderCustomerRow(customer))
+              )}
+            </div>
+          </div>
           );
         })}
       </div>

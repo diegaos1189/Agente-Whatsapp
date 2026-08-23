@@ -16,6 +16,7 @@ async function tick(): Promise<void> {
       await notifyOrderOperationalRisk({
         orderId: hit.orderId,
         reason: hit.reason,
+        delayMinutes: hit.delayMinutes,
       });
     }
 

@@ -44,7 +44,7 @@ const settingsUpdateSchema = z.object({
   assistantTone: z.string().min(1).optional(),
   agentName: z.string().optional(),
   cartRecoveryEnabled: z.boolean().optional(),
-  cartRecoveryDelayMinutes: z.number().int().positive().optional(),
+  cartRecoveryDelayMinutes: z.number().int().min(1).max(28).optional(),
   cartRecoveryMaxAttempts: z.number().int().min(0).max(1).optional(),
   cartRecoveryMessage: z.string().min(1).optional(),
   upsellEnabled: z.boolean().optional(),
@@ -59,6 +59,11 @@ const settingsUpdateSchema = z.object({
   whatsappAppSecret: z.string().optional(),
   whatsappVerifyToken: z.string().optional(),
   whatsappApiVersion: z.string().optional(),
+  reactivationEnabled: z.boolean().optional(),
+  reactivationTemplateName: z.string().optional(),
+  reactivationTemplateLanguage: z.string().min(2).max(10).optional(),
+  reactivationDormantDays: z.number().int().min(7).max(180).optional(),
+  reactivationCooldownDays: z.number().int().min(7).max(180).optional(),
 });
 
 /** Oculta un secreto en la respuesta al panel: solo se ven los ultimos 4 caracteres. */

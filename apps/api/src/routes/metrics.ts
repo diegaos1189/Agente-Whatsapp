@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requirePermission } from "../modules/adminUsers/adminAuth.js";
-import { getMetrics, getMetricsForRange } from "../modules/metrics/metricsService.js";
+import { getCustomerSegmentCustomers, getMetrics, getMetricsForRange } from "../modules/metrics/metricsService.js";
 
 export async function metricsRoutes(app: FastifyInstance) {
   app.get("/api/metrics", async (request) => {
@@ -18,5 +18,11 @@ export async function metricsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: "Fechas invalidas" });
     }
     return getMetricsForRange(from, to);
+  });
+
+  app.get("/api/metrics/customers", async (request) => {
+    requirePermission(request, "metrics");
+    const query = z.object({ limit: z.coerce.number().int().min(1).max(50).optional() }).parse(request.query);
+    return getCustomerSegmentCustomers(query.limit);
   });
 }

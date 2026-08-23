@@ -12,6 +12,11 @@ export interface DownloadedMedia {
 
 export interface WhatsAppClient {
   sendTextMessage(to: string, body: string): Promise<{ success: boolean; providerMessageId: string | null }>;
+  sendTemplateMessage(
+    to: string,
+    templateName: string,
+    languageCode: string,
+  ): Promise<{ success: boolean; providerMessageId: string | null }>;
   /** Descarga un audio/imagen recibido por su media id. Null si no aplica (ej: modo mock) o si fallo. */
   downloadMedia(mediaId: string): Promise<DownloadedMedia | null>;
   /** Marca el mensaje como leido y muestra "escribiendo..." mientras procesamos la respuesta. */
@@ -46,6 +51,11 @@ class MockWhatsAppClient implements WhatsAppClient {
   async sendImageMessage(to: string, dataUrl: string, caption?: string) {
     logger.info({ to, caption, size: dataUrl.length }, "[WHATSAPP MOCK] imagen saliente");
     return { success: true, providerMessageId: `mock-${Date.now()}` };
+  }
+
+  async sendTemplateMessage(to: string, templateName: string, languageCode: string) {
+    logger.info({ to, templateName, languageCode }, "[WHATSAPP MOCK] plantilla saliente");
+    return { success: true, providerMessageId: `mock-template-${Date.now()}` };
   }
 }
 
@@ -94,6 +104,44 @@ class MetaWhatsAppClient implements WhatsAppClient {
       return { success: true, providerMessageId: data.messages?.[0]?.id ?? null };
     } catch (error) {
       logger.error({ err: error }, "Fallo enviando mensaje via Meta WhatsApp API");
+      return { success: false, providerMessageId: null };
+    }
+  }
+
+  async sendTemplateMessage(to: string, templateName: string, languageCode: string) {
+    if (!this.phoneNumberId || !this.token) {
+      logger.error("MetaWhatsAppClient: falta WHATSAPP_PHONE_NUMBER_ID o WHATSAPP_TOKEN");
+      return { success: false, providerMessageId: null };
+    }
+
+    try {
+      const res = await fetch(this.baseUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to,
+          type: "template",
+          template: {
+            name: templateName,
+            language: { code: languageCode },
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        logger.error({ status: res.status, errBody, templateName }, "Meta WhatsApp API respondio error al enviar plantilla");
+        return { success: false, providerMessageId: null };
+      }
+
+      const data = (await res.json()) as { messages?: Array<{ id: string }> };
+      return { success: true, providerMessageId: data.messages?.[0]?.id ?? null };
+    } catch (error) {
+      logger.error({ err: error, templateName }, "Fallo enviando plantilla via Meta WhatsApp API");
       return { success: false, providerMessageId: null };
     }
   }

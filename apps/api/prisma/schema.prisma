@@ -16,6 +16,10 @@ model Contact {
   id        String   @id @default(cuid())
   phone     String   @unique
   name      String?
+  marketingOptInAt DateTime?
+  marketingOptInSource String?
+  marketingOptOutAt DateTime?
+  marketingOptOutReason String?
   cartRecoveryOptOutAt DateTime?
   cartRecoveryOptOutReason String?
   createdAt DateTime @default(now())
@@ -27,6 +31,7 @@ model Contact {
   inboundWhatsAppMessages InboundWhatsAppMessage[]
   messageProcessingLease  ContactMessageProcessingLease?
   cartRecoveries CartRecovery[]
+  reactivationCampaigns CustomerReactivationCampaign[]
 
   @@map("contacts")
 }
@@ -517,6 +522,11 @@ model BusinessSettings {
   whatsappAppSecret      String   @default("")
   whatsappVerifyToken    String   @default("")
   whatsappApiVersion     String   @default("v21.0")
+  reactivationEnabled    Boolean  @default(false)
+  reactivationTemplateName String @default("")
+  reactivationTemplateLanguage String @default("es_CO")
+  reactivationDormantDays Int     @default(30)
+  reactivationCooldownDays Int    @default(30)
   updatedAt              DateTime @updatedAt
 
   @@map("business_settings")
@@ -548,6 +558,27 @@ model CartRecovery {
   @@index([conversationId, updatedAt])
   @@index([contactId, createdAt])
   @@map("cart_recoveries")
+}
+
+model CustomerReactivationCampaign {
+  id               String   @id @default(cuid())
+  contactId        String
+  contact          Contact  @relation(fields: [contactId], references: [id])
+  status           String   @default("PENDING")
+  templateName     String
+  templateLanguage String
+  dormantDays      Int
+  lastOrderAt      DateTime
+  providerMessageId String?
+  skipReason       String?
+  sentAt           DateTime?
+  convertedOrderId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([contactId, createdAt])
+  @@index([status, createdAt])
+  @@map("customer_reactivation_campaigns")
 }
 
 // ---------- Usuarios del panel admin ----------
