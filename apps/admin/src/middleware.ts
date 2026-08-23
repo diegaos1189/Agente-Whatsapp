@@ -21,6 +21,11 @@ async function hmacHex(secret: string, data: string): Promise<string> {
 }
 
 export async function middleware(request: NextRequest) {
+  // Pagina publica (landing del negocio) — sin autenticacion, la ve cualquier cliente.
+  if (request.nextUrl.pathname === "/") {
+    return NextResponse.next();
+  }
+
   const secret = process.env.SESSION_SECRET ?? "";
   const isProduction = process.env.NODE_ENV === "production";
 
