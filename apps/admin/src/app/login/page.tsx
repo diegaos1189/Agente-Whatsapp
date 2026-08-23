@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import { apiServerFetch } from "@/lib/apiServer";
-import type { BusinessSettingsDTO } from "@pollos/shared";
+import type { PublicSettingsDTO } from "../api/public-settings/route";
 import { LoginFormClient } from "./LoginFormClient";
 
 async function getLogoUrl(): Promise<string | null> {
   try {
-    const settings = await apiServerFetch<BusinessSettingsDTO>("/api/settings");
+    const settings = await apiServerFetch<PublicSettingsDTO>("/api/public-settings");
     return settings.logoUrl;
   } catch {
     return null;
