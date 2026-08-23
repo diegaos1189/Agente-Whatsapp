@@ -1200,6 +1200,53 @@ export async function notifyOrderCorrection(orderId: string): Promise<void> {
   await sendAndLog(conversation.id, order.contact.phone, message);
 }
 
+function buildOperationalRiskCustomerMessage(params: {
+  orderCode: string;
+  reason: "AWAITING_PAYMENT_STALE" | "RECEIVED_STALE" | "READY_FOR_PICKUP_STALE" | "READY_FOR_DISPATCH_STALE";
+}): string {
+  switch (params.reason) {
+    case "AWAITING_PAYMENT_STALE":
+      return `Tu pedido ${params.orderCode} sigue pendiente de confirmacion de pago. Si ya hiciste la transferencia, envianos el comprobante por este chat para agilizarlo.`;
+    case "RECEIVED_STALE":
+      return `Tu pedido ${params.orderCode} sigue en preparacion. Tenemos una demora y estamos moviendonos para sacarlo lo antes posible.`;
+    case "READY_FOR_PICKUP_STALE":
+      return `Tu pedido ${params.orderCode} ya esta listo para recoger en el local. Cuando quieras, puedes pasar por el.`;
+    case "READY_FOR_DISPATCH_STALE":
+      return `Tu pedido ${params.orderCode} ya esta listo y estamos coordinando el despacho. Gracias por esperarnos un momento mas.`;
+    default:
+      return `Tu pedido ${params.orderCode} sigue en proceso.`;
+  }
+}
+
+export async function notifyOrderOperationalRisk(params: {
+  orderId: string;
+  reason: "AWAITING_PAYMENT_STALE" | "RECEIVED_STALE" | "READY_FOR_PICKUP_STALE" | "READY_FOR_DISPATCH_STALE";
+}): Promise<void> {
+  const order = await prisma.order.findUnique({
+    where: { id: params.orderId },
+    include: { contact: true, events: true },
+  });
+  if (!order) return;
+
+  const eventKey = `AUTO_CUSTOMER_ALERT:${params.reason}`;
+  const alreadySent = order.events.some((event) => event.note?.includes(eventKey));
+  if (alreadySent) return;
+
+  const { conversation } = await getOrCreateActiveConversation(order.contactId);
+  const message = buildOperationalRiskCustomerMessage({
+    orderCode: order.code,
+    reason: params.reason,
+  });
+  await sendAndLog(conversation.id, order.contact.phone, message);
+  await prisma.orderEvent.create({
+    data: {
+      orderId: order.id,
+      status: order.status,
+      note: `${eventKey} ${message}`,
+    },
+  });
+}
+
 // Cola de procesamiento por numero de telefono: si el cliente manda 2 mensajes seguidos
 // muy rapido (ej: "Si" y luego "Efectivo" casi al mismo tiempo), sin esto se procesan en
 // paralelo — el segundo lee el estado del pedido (context) ANTES de que el primero termine

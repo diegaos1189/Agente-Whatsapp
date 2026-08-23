@@ -28,6 +28,8 @@ export async function getMetrics(): Promise<MetricsDTO> {
     revenueTodayAgg,
     revenueMonthAgg,
     deliveredOrdersThisMonth,
+    openRiskOrders,
+    recentOrderEvents,
   ] = await Promise.all([
     prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
     prisma.order.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
@@ -55,6 +57,16 @@ export async function getMetrics(): Promise<MetricsDTO> {
       where: { createdAt: { gte: startOfMonth }, deliveryType: "DELIVERY", status: OrderStatus.DELIVERED },
       select: { createdAt: true, events: { where: { status: OrderStatus.DELIVERED }, select: { createdAt: true }, take: 1 } },
     }),
+    prisma.order.count({
+      where: {
+        flaggedForReview: true,
+        status: { in: [OrderStatus.AWAITING_PAYMENT, OrderStatus.RECEIVED, OrderStatus.READY, OrderStatus.ON_THE_WAY] },
+      },
+    }),
+    prisma.orderEvent.findMany({
+      where: { createdAt: { gte: thirtyDaysAgo } },
+      select: { note: true },
+    }),
   ]);
 
   const avgTicket =
@@ -62,7 +74,22 @@ export async function getMetrics(): Promise<MetricsDTO> {
       ? Math.round(completedOrders.reduce((acc, o) => acc + o.total, 0) / completedOrders.length)
       : 0;
 
+  function findLatestEventTimestamp(order: (typeof completedOrders)[number], status: string): Date | null {
+    const matching = order.events
+      .filter((event) => event.status === status)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return matching[0]?.createdAt ?? null;
+  }
+
+  function averageMinutes(values: number[]): number | null {
+    return values.length > 0 ? Math.round(values.reduce((acc, value) => acc + value, 0) / values.length) : null;
+  }
+
   const prepTimesMinutes: number[] = [];
+  const paymentConfirmationMinutes: number[] = [];
+  const kitchenSlaMinutes: number[] = [];
+  const dispatchSlaMinutes: number[] = [];
+  const deliveryLegSlaMinutes: number[] = [];
   for (const order of completedOrders) {
     const readyEvent =
       order.events.find((e) => e.status === OrderStatus.READY) ??
@@ -70,6 +97,24 @@ export async function getMetrics(): Promise<MetricsDTO> {
     if (!readyEvent) continue;
     const minutes = (readyEvent.createdAt.getTime() - order.createdAt.getTime()) / 60000;
     if (minutes >= 0) prepTimesMinutes.push(minutes);
+
+    const receivedAt = findLatestEventTimestamp(order, OrderStatus.RECEIVED);
+    if (receivedAt && order.createdAt.getTime() <= receivedAt.getTime()) {
+      paymentConfirmationMinutes.push((receivedAt.getTime() - order.createdAt.getTime()) / 60000);
+    }
+
+    if (receivedAt && receivedAt.getTime() <= readyEvent.createdAt.getTime()) {
+      kitchenSlaMinutes.push((readyEvent.createdAt.getTime() - receivedAt.getTime()) / 60000);
+    }
+
+    const onTheWayAt = findLatestEventTimestamp(order, OrderStatus.ON_THE_WAY);
+    const deliveredAt = findLatestEventTimestamp(order, OrderStatus.DELIVERED);
+    if (readyEvent && onTheWayAt && readyEvent.createdAt.getTime() <= onTheWayAt.getTime()) {
+      dispatchSlaMinutes.push((onTheWayAt.getTime() - readyEvent.createdAt.getTime()) / 60000);
+    }
+    if (onTheWayAt && deliveredAt && onTheWayAt.getTime() <= deliveredAt.getTime()) {
+      deliveryLegSlaMinutes.push((deliveredAt.getTime() - onTheWayAt.getTime()) / 60000);
+    }
   }
   const avgPrepMinutes =
     prepTimesMinutes.length > 0
@@ -96,6 +141,30 @@ export async function getMetrics(): Promise<MetricsDTO> {
   const ordersByStatus: Record<string, number> = {};
   for (const row of ordersByStatusRaw) ordersByStatus[row.status] = row._count.status;
 
+  const riskByType: MetricsDTO["riskByType"] = {
+    AWAITING_PAYMENT_STALE: 0,
+    RECEIVED_STALE: 0,
+    READY_FOR_PICKUP_STALE: 0,
+    READY_FOR_DISPATCH_STALE: 0,
+  };
+  let proactiveAlertsLast30Days = 0;
+  for (const event of recentOrderEvents) {
+    const note = event.note ?? "";
+    if (note.includes("AUTO_CUSTOMER_ALERT:")) proactiveAlertsLast30Days += 1;
+    if (note.includes("AUTO_CUSTOMER_ALERT:AWAITING_PAYMENT_STALE") || note.includes("ALERTA OPERATIVA: Pedido esperando confirmacion de pago")) {
+      riskByType.AWAITING_PAYMENT_STALE = (riskByType.AWAITING_PAYMENT_STALE ?? 0) + 1;
+    }
+    if (note.includes("AUTO_CUSTOMER_ALERT:RECEIVED_STALE") || note.includes("ALERTA OPERATIVA: Pedido en preparacion")) {
+      riskByType.RECEIVED_STALE = (riskByType.RECEIVED_STALE ?? 0) + 1;
+    }
+    if (note.includes("AUTO_CUSTOMER_ALERT:READY_FOR_PICKUP_STALE") || note.includes("ALERTA OPERATIVA: Pedido listo para recoger")) {
+      riskByType.READY_FOR_PICKUP_STALE = (riskByType.READY_FOR_PICKUP_STALE ?? 0) + 1;
+    }
+    if (note.includes("AUTO_CUSTOMER_ALERT:READY_FOR_DISPATCH_STALE") || note.includes("ALERTA OPERATIVA: Pedido listo esperando despacho")) {
+      riskByType.READY_FOR_DISPATCH_STALE = (riskByType.READY_FOR_DISPATCH_STALE ?? 0) + 1;
+    }
+  }
+
   const handoffRate =
     totalConversations30Days > 0 ? Math.round((handoffConversations.length / totalConversations30Days) * 100) : 0;
 
@@ -114,6 +183,17 @@ export async function getMetrics(): Promise<MetricsDTO> {
     totalConversations30Days,
     handoffRate,
     ordersByStatus,
+    riskOrdersOpen: openRiskOrders,
+    proactiveAlertsLast30Days,
+    riskByType,
+    paymentConfirmationSlaMinutes: averageMinutes(paymentConfirmationMinutes),
+    paymentConfirmationSampleCount: paymentConfirmationMinutes.length,
+    kitchenSlaMinutes: averageMinutes(kitchenSlaMinutes),
+    kitchenSampleCount: kitchenSlaMinutes.length,
+    dispatchSlaMinutes: averageMinutes(dispatchSlaMinutes),
+    dispatchSampleCount: dispatchSlaMinutes.length,
+    deliveryLegSlaMinutes: averageMinutes(deliveryLegSlaMinutes),
+    deliveryLegSampleCount: deliveryLegSlaMinutes.length,
   };
 }
 

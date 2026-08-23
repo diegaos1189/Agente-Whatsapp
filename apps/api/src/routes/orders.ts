@@ -11,6 +11,7 @@ import {
   updateOrderItems,
   confirmOrderPayment,
   markCashPaymentReceived,
+  getActiveOperationalAlerts,
 } from "../modules/orders/orderService.js";
 import {
   notifyOrderStatusChange,
@@ -69,6 +70,12 @@ export async function orderRoutes(app: FastifyInstance) {
     });
 
     return orders.map((o) => toOrderDTO(o, o.contact.name, o.contact.phone));
+  });
+
+  app.get("/api/orders/alerts", async (request) => {
+    requirePermission(request, "orders");
+    const settings = await getBusinessSettings();
+    return getActiveOperationalAlerts({ estimatedPrepMinutes: settings.estimatedPrepMinutes });
   });
 
   app.post("/api/orders", async (request, reply) => {

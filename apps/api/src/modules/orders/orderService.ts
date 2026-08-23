@@ -90,6 +90,28 @@ export interface OrderOperationalAlert {
   delayMinutes: number;
 }
 
+export interface OperationalRiskAuditHit {
+  orderId: string;
+  reason: OrderOperationalAlert["reason"];
+  note: string;
+}
+
+export interface ActiveOrderOperationalAlertDTO {
+  orderId: string;
+  orderCode: string;
+  customerName: string | null;
+  phone: string;
+  status: OrderDTO["status"];
+  deliveryType: OrderDTO["deliveryType"];
+  flaggedForReview: boolean;
+  reason: OrderOperationalAlert["reason"];
+  note: string;
+  delayMinutes: number;
+  suggestedAction: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const PAYMENT_CONFIRMATION_ALERT_MINUTES = 15;
 const READY_PICKUP_ALERT_MINUTES = 20;
 const READY_DELIVERY_ALERT_MINUTES = 10;
@@ -98,6 +120,11 @@ const orderWithItems = Prisma.validator<Prisma.OrderDefaultArgs>()({
   include: { items: { include: { product: true } }, events: true, payments: true },
 });
 export type OrderWithItems = Prisma.OrderGetPayload<typeof orderWithItems>;
+
+const orderWithItemsAndContact = Prisma.validator<Prisma.OrderDefaultArgs>()({
+  include: { items: { include: { product: true } }, events: true, payments: true, contact: true },
+});
+type OrderWithItemsAndContact = Prisma.OrderGetPayload<typeof orderWithItemsAndContact>;
 
 function generateOrderCode(): string {
   const stamp = Date.now().toString(36).toUpperCase();
@@ -379,10 +406,43 @@ export function evaluateOrderOperationalAlert(params: {
   return null;
 }
 
+function buildSuggestedAction(reason: OrderOperationalAlert["reason"], deliveryType: DeliveryType): string {
+  if (reason === "AWAITING_PAYMENT_STALE") return "Confirmar pago o contactar al cliente";
+  if (reason === "RECEIVED_STALE") return "Revisar cocina y actualizar estado";
+  if (reason === "READY_FOR_PICKUP_STALE") return "Avisar al cliente que recoja su pedido";
+  if (reason === "READY_FOR_DISPATCH_STALE") {
+    return deliveryType === "PICKUP" ? "Confirmar recogida del cliente" : "Asignar despacho o actualizar salida";
+  }
+  return "Revisar pedido";
+}
+
+export async function getActiveOperationalAlerts(params: {
+  estimatedPrepMinutes: number;
+  now?: Date;
+}): Promise<ActiveOrderOperationalAlertDTO[]> {
+  const { estimatedPrepMinutes, now = new Date() } = params;
+  const orders = await prisma.order.findMany({
+    where: {
+      status: { in: [OrderStatus.AWAITING_PAYMENT, OrderStatus.RECEIVED, OrderStatus.READY] },
+    },
+    orderBy: { createdAt: "asc" },
+    ...orderWithItemsAndContact,
+  });
+
+  const alerts: ActiveOrderOperationalAlertDTO[] = [];
+  for (const order of orders) {
+    const alert = evaluateOrderOperationalAlert({ order, estimatedPrepMinutes, now });
+    if (!alert) continue;
+    alerts.push(toOperationalAlertDTO(order, alert));
+  }
+
+  return alerts.sort((a, b) => b.delayMinutes - a.delayMinutes);
+}
+
 export async function auditOrdersForOperationalRisk(params: {
   estimatedPrepMinutes: number;
   now?: Date;
-}): Promise<{ flagged: number }> {
+}): Promise<{ flagged: number; hits: OperationalRiskAuditHit[] }> {
   const { estimatedPrepMinutes, now = new Date() } = params;
   const orders = await prisma.order.findMany({
     where: {
@@ -392,6 +452,7 @@ export async function auditOrdersForOperationalRisk(params: {
   });
 
   let flagged = 0;
+  const hits: OperationalRiskAuditHit[] = [];
   for (const order of orders) {
     const alert = evaluateOrderOperationalAlert({ order, estimatedPrepMinutes, now });
     if (!alert) continue;
@@ -409,9 +470,28 @@ export async function auditOrdersForOperationalRisk(params: {
       },
     });
     flagged += 1;
+    hits.push({ orderId: order.id, reason: alert.reason, note: alert.note });
   }
 
-  return { flagged };
+  return { flagged, hits };
+}
+
+function toOperationalAlertDTO(order: OrderWithItemsAndContact, alert: OrderOperationalAlert): ActiveOrderOperationalAlertDTO {
+  return {
+    orderId: order.id,
+    orderCode: order.code,
+    customerName: order.contact.name,
+    phone: order.contact.phone,
+    status: order.status as ActiveOrderOperationalAlertDTO["status"],
+    deliveryType: order.deliveryType as ActiveOrderOperationalAlertDTO["deliveryType"],
+    flaggedForReview: order.flaggedForReview,
+    reason: alert.reason,
+    note: alert.note,
+    delayMinutes: alert.delayMinutes,
+    suggestedAction: buildSuggestedAction(alert.reason, order.deliveryType as DeliveryType),
+    createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
+  };
 }
 
 /**

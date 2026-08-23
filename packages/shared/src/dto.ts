@@ -261,6 +261,36 @@ export interface MetricsDTO {
   totalConversations30Days: number;
   handoffRate: number;
   ordersByStatus: Record<string, number>;
+  riskOrdersOpen: number;
+  proactiveAlertsLast30Days: number;
+  riskByType: Record<string, number>;
+  paymentConfirmationSlaMinutes: number | null;
+  paymentConfirmationSampleCount: number;
+  kitchenSlaMinutes: number | null;
+  kitchenSampleCount: number;
+  dispatchSlaMinutes: number | null;
+  dispatchSampleCount: number;
+  deliveryLegSlaMinutes: number | null;
+  deliveryLegSampleCount: number;
+}
+
+export interface OrderOperationalAlertDTO {
+  orderId: string;
+  orderCode: string;
+  customerName: string | null;
+  phone: string;
+  status: OrderStatus;
+  deliveryType: DeliveryType;
+  reason:
+    | "AWAITING_PAYMENT_STALE"
+    | "RECEIVED_STALE"
+    | "READY_FOR_PICKUP_STALE"
+    | "READY_FOR_DISPATCH_STALE";
+  note: string;
+  delayMinutes: number;
+  suggestedAction: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RangeMetricsDTO {
