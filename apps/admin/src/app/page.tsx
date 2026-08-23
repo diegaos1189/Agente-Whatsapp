@@ -1,15 +1,12 @@
-import { apiServerFetch } from "@/lib/apiServer";
-import type { BusinessSettingsDTO } from "@pollos/shared";
+import { Suspense } from "react";
+import { LandingContent } from "./LandingContent";
 
-async function getSettings(): Promise<BusinessSettingsDTO | null> {
-  try {
-    return await apiServerFetch<BusinessSettingsDTO>("/api/settings");
-  } catch {
-    return null;
-  }
-}
+export const dynamic = "force-dynamic";
 
-export default async function LandingPage() {
-  const settings = await getSettings();
-  return <div>OK {settings ? "with" : "without"} settings, name={settings?.restaurantName}</div>;
+export default function LandingPage() {
+  return (
+    <Suspense fallback={null}>
+      <LandingContent />
+    </Suspense>
+  );
 }
