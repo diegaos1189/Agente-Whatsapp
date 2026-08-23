@@ -87,7 +87,7 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
           <h1 style={{ fontSize: "2.25rem", lineHeight: 1.15, margin: "0 0 14px", fontWeight: 800 }}>
             Administra tu negocio de comida desde una sola plataforma
           </h1>
-          <p style={{ color: "#6e6e73", fontSize: "1rem", lineHeight: 1.6, margin: "0 0 28px", maxWidth: 480 }}>
+          <p style={{ color: "#4d4c52", fontSize: "1rem", lineHeight: 1.6, margin: "0 0 28px", maxWidth: 480 }}>
             Automatiza pedidos por WhatsApp con inteligencia artificial y controla menú, cocina, facturación y equipo
             desde un solo panel. Listo para adaptar a restaurantes, pizzerías, hamburgueserías y negocios de comida
             similares.
@@ -154,15 +154,15 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
                 borderRadius: 16,
                 margin: "0 auto 4px",
                 border: "1px solid rgba(0,0,0,0.08)",
-                background: "#f5f5f7",
+                background: "#f5f5f6",
               }}
             />
           )}
           <div>
             <h2 style={{ margin: "0 0 4px", fontSize: "1.375rem" }}>Bienvenido de nuevo</h2>
-            <p style={{ margin: 0, color: "#6e6e73", fontSize: 13 }}>Ingresa con tu usuario para administrar el negocio.</p>
+            <p style={{ margin: 0, color: "#4d4c52", fontSize: 13 }}>Ingresa con tu usuario para administrar el negocio.</p>
           </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, fontWeight: 600, color: "#6e6e73" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, fontWeight: 600, color: "#4d4c52" }}>
             Usuario
             <input
               value={username}
@@ -170,8 +170,8 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
               autoFocus
               required
               style={{
-                background: "#f5f5f7",
-                color: "#1d1d1f",
+                background: "#f5f5f6",
+                color: "#252527",
                 border: "1px solid rgba(0,0,0,0.12)",
                 borderRadius: 8,
                 padding: "11px 14px",
@@ -179,7 +179,7 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
               }}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, fontWeight: 600, color: "#6e6e73" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, fontWeight: 600, color: "#4d4c52" }}>
             Contraseña
             <input
               type="password"
@@ -187,8 +187,8 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
               onChange={(e) => setPassword(e.target.value)}
               required
               style={{
-                background: "#f5f5f7",
-                color: "#1d1d1f",
+                background: "#f5f5f6",
+                color: "#252527",
                 border: "1px solid rgba(0,0,0,0.12)",
                 borderRadius: 8,
                 padding: "11px 14px",
@@ -220,11 +220,11 @@ export function LoginFormClient({ logoUrl }: { logoUrl: string | null }) {
           >
             {loading ? "Entrando..." : "Ingresar"}
           </button>
-          <p style={{ margin: 0, textAlign: "center", color: "#6e6e73", fontSize: 12 }}>Acceso restringido a personal autorizado.</p>
+          <p style={{ margin: 0, textAlign: "center", color: "#4d4c52", fontSize: 12 }}>Acceso restringido a personal autorizado.</p>
         </form>
       </div>
 
-      <p style={{ textAlign: "center", color: "#6e6e73", fontSize: 12, marginTop: 56 }}>
+      <p style={{ textAlign: "center", color: "#4d4c52", fontSize: 12, marginTop: 56 }}>
         Creado por <span style={{ color: "#31a71b", fontWeight: 700 }}>KenzyGroup S.A.S</span>
       </p>
     </div>
