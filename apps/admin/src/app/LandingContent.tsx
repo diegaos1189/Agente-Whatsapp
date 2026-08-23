@@ -1,5 +1,7 @@
-import { apiServerFetch } from "@/lib/apiServer";
-import type { BusinessSettingsDTO } from "@pollos/shared";
+"use client";
+
+import { useEffect, useState } from "react";
+import type { PublicSettingsDTO } from "./api/public-settings/route";
 import { WhatsAppButton } from "./WhatsAppButton";
 
 const DAY_LABELS_ES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -10,16 +12,16 @@ function waLink(phone: string, text: string): string {
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
 
-async function getSettings(): Promise<BusinessSettingsDTO | null> {
-  try {
-    return await apiServerFetch<BusinessSettingsDTO>("/api/settings");
-  } catch {
-    return null;
-  }
-}
+export function LandingContent() {
+  const [settings, setSettings] = useState<PublicSettingsDTO | null>(null);
 
-export async function LandingContent() {
-  const settings = await getSettings();
+  useEffect(() => {
+    fetch("/api/public-settings")
+      .then((res) => res.json())
+      .then((data) => setSettings(data))
+      .catch(() => setSettings(null));
+  }, []);
+
   const name = settings?.restaurantName ?? "Nuestro negocio";
   const phone = settings?.phone ?? "";
   const address = settings?.address ?? "";
