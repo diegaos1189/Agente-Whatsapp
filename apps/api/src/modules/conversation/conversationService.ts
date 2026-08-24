@@ -832,14 +832,20 @@ async function handleOrderCreation(params: {
   }
 
   const previousSummary = params.checkout?.summary ?? null;
-  const summaryBecameStale =
-    !previousSummary ||
-    isCheckoutSummaryStale(params.checkout, params.state, params.activeCart) ||
-    previousSummary.total !== currentCheckout.summary.total ||
-    previousSummary.subtotal !== currentCheckout.summary.subtotal ||
-    previousSummary.deliveryFee !== currentCheckout.summary.deliveryFee ||
-    previousSummary.discount !== currentCheckout.summary.discount ||
-    previousSummary.tax !== currentCheckout.summary.tax;
+  // Solo se vuelve a pedir confirmacion cuando YA se le habia cotizado un resumen al cliente
+  // y algo cambio despues (carrito, domicilio, descuento o precio). Antes tambien entraba
+  // aqui cuando no habia resumen previo, y como el resumen se guardaba apenas en este punto,
+  // el primer "si" del cliente siempre disparaba una segunda confirmacion con exactamente los
+  // mismos valores que acababa de aceptar.
+  const summaryBecameStale = Boolean(
+    previousSummary &&
+      (isCheckoutSummaryStale(params.checkout, params.state, params.activeCart) ||
+        previousSummary.total !== currentCheckout.summary.total ||
+        previousSummary.subtotal !== currentCheckout.summary.subtotal ||
+        previousSummary.deliveryFee !== currentCheckout.summary.deliveryFee ||
+        previousSummary.discount !== currentCheckout.summary.discount ||
+        previousSummary.tax !== currentCheckout.summary.tax),
+  );
 
   if (summaryBecameStale) {
     const repricedState: OrderFlowState = {
@@ -859,15 +865,13 @@ async function handleOrderCreation(params: {
         failedAttempts: 0,
       },
     });
-    const facts = previousSummary
-      ? [
-          "El pedido cambio antes de confirmar y necesito una nueva confirmacion.",
-          ...formatCartPricingFacts(pricing),
-        ]
-      : formatCartPricingFacts(pricing);
+    const facts = [
+      "El pedido cambio antes de confirmar y necesito una nueva confirmacion.",
+      ...formatCartPricingFacts(pricing),
+    ];
     const message = await generateResponse({
       facts,
-      askNext: "Estos son los valores finales actualizados. Â¿Desea confirmar este pedido?",
+      askNext: "Estos son los valores finales actualizados. ¿Desea confirmar este pedido?",
       businessName: settings.restaurantName,
       tone: settings.assistantTone,
     });
@@ -902,6 +906,19 @@ async function handleOrderCreation(params: {
       },
       "Se reutilizo una confirmacion de checkout ya procesada",
     );
+    // El pedido ya existia (el cliente confirmo dos veces seguidas). Antes esta rama no
+    // respondia nada porque el "Estamos confirmando su pedido..." ya habia salido; ahora que
+    // ese mensaje intermedio no existe, hay que contestarle algo para no dejarlo en visto.
+    const repeatedMessage = await generateResponse({
+      facts: [
+        `Su pedido ${order.code} ya estaba confirmado.`,
+        `Total a pagar: ${formatCurrency(order.total, settings.currency)}.`,
+      ],
+      askNext: null,
+      businessName: settings.restaurantName,
+      tone: settings.assistantTone,
+    });
+    await sendAndLog(params.conversationId, params.phone, repeatedMessage);
     return;
   }
 
@@ -2704,6 +2721,25 @@ async function handleTextMessage(
       if (!result.orderCreated && JSON.stringify(result.nextState.cart) !== cartBeforeTurn) {
         context.activeCart = null;
       }
+
+      // El turno termina esperando el "si" del cliente: dejamos ya cotizado y guardado el
+      // checkout summary con los mismos valores que le acabamos de mostrar. Sin esto el
+      // checkout llegaba vacio al turno siguiente, handleOrderCreation lo leia como resumen
+      // desactualizado y le pedia una segunda confirmacion identica a la que ya habia dado.
+      // Va despues de fijar orderFlow/activeCart para que la huella del resumen se calcule
+      // sobre el mismo contexto que se va a persistir.
+      if (!result.orderCreated && context.orderFlow.step === OrderFlowStep.CONFIRMING) {
+        const prepared = await prepareCheckoutSummary({
+          state: context.orderFlow,
+          activeCart: context.activeCart ?? null,
+          settings,
+          previousCheckout: context.checkout,
+        });
+        if (prepared.validation.valid && prepared.checkout.summary) {
+          context.checkout = prepared.checkout;
+        }
+      }
+
       // El producto principal + acompanantes/bebidas ya quedaron resueltos justo este turno
       // (no en uno anterior) y el pedido no se creo todavia — momento seguro para ofrecer un
       // adicional, antes de entrar a domicilio/pago/confirmacion.
@@ -2730,7 +2766,10 @@ async function handleTextMessage(
             failedAttempts: 0,
           },
         });
-        await sendAndLog(conversationId, phone, replyText, receivedAt);
+        // Sin mensaje intermedio: handleOrderCreation manda el unico mensaje del cierre.
+        if (replyText.trim()) {
+          await sendAndLog(conversationId, phone, replyText, receivedAt);
+        }
         await handleOrderCreation({
           conversationId,
           contactId,
@@ -3089,7 +3128,7 @@ async function runOrderFlowTurn(params: {
       decision = {
         ...decision,
         facts: [pricing.issues[0]?.message ?? "No pude validar el pedido con los precios actuales."],
-        askNext: "Â¿Desea corregir el pedido para continuar?",
+        askNext: "¿Desea corregir el pedido para continuar?",
         readyToCreateOrder: false,
       };
     }
@@ -3116,7 +3155,10 @@ async function runOrderFlowTurn(params: {
 
   let replyText: string;
   if (decision.readyToCreateOrder) {
-    replyText = "¡Listo! Estamos confirmando su pedido...";
+    // No se manda nada en este punto: el unico mensaje del cierre lo arma handleOrderCreation
+    // (pedido creado, total y tiempo estimado). El "Estamos confirmando su pedido..." que
+    // habia antes solo agregaba un mensaje de relleno justo antes del mensaje real.
+    replyText = "";
   } else {
     replyText = await generateResponse({
       facts: [...decision.facts, ...extraFacts],
