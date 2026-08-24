@@ -511,7 +511,24 @@ a.link:hover { text-decoration: underline; }
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-top: none;
+  /* Scroll propio del hilo: sin esto una conversacion larga estiraba la pagina entera y
+     empujaba la barra de respuesta fuera de pantalla. Alto acotado a la ventana para que
+     encabezado y barra de escritura queden siempre visibles (ver ChatThread.tsx, que ademas
+     abre la conversacion mostrando el ultimo mensaje). */
+  height: clamp(300px, calc(100vh - 340px), 680px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
 }
+
+.chat-thread::-webkit-scrollbar { width: 8px; }
+.chat-thread::-webkit-scrollbar-track { background: transparent; }
+.chat-thread::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 999px;
+}
+.chat-thread::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.35); }
 
 .chat-bubble {
   padding: 6px 9px 8px;
@@ -728,6 +745,9 @@ a.link:hover { text-decoration: underline; }
   }
   .conv-detail-layout > div:first-child { flex: none; width: 100%; }
   .conv-detail-order { min-width: 0; width: 100%; }
+  /* Apilado, el hilo compite con el panel de pedido: se le da menos alto para que el operador
+     alcance a ver el pedido sin scrollear media pantalla. */
+  .chat-thread { height: clamp(280px, 60vh, 520px); }
 }
 
 .notif-bell {
