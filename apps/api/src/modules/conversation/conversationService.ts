@@ -57,6 +57,7 @@ import {
   decideOrderFlow,
   initialOrderFlowState,
   getPendingOrderQuestion,
+  isExplicitCancelRequest,
   type OrderFlowState,
 } from "./orderFlow.js";
 import {
@@ -2367,6 +2368,13 @@ async function handleTextMessage(
   const context = parseContext(conversation.context);
   const normalizedText = normalizeLocalizedText(text);
   const inOrderFlowAlready = context.orderFlow.step !== OrderFlowStep.IDLE;
+  // Pregunta que el bot dejo pendiente en el turno anterior. Se calcula ANTES de llamar a la IA
+  // porque tanto el clasificador de intencion como el extractor de entidades la necesitan: sin
+  // ella, un "No" o un "Ensalada" sueltos contestando "¿desea algun acompanante?" salian como
+  // CANCEL / productType y el pedido se cancelaba o el bot re-preguntaba en bucle.
+  const pendingQuestion = inOrderFlowAlready
+    ? getPendingOrderQuestion(context.orderFlow, settings.acceptedPaymentMethods as PaymentMethod[])
+    : null;
 
   const welcomeShortcut: Record<string, string> = {
     "1": Intent.VIEW_MENU,
@@ -2390,8 +2398,8 @@ async function handleTextMessage(
   const [intentResult, entities] = shortcutIntent
     ? [{ intent: shortcutIntent, confidence: 1 }, EMPTY_ENTITIES]
     : await Promise.all([
-        classifyIntent({ message: normalizedText, recentHistory: history, businessName: settings.restaurantName }),
-        extractEntities({ message: normalizedText, recentHistory: history, businessName: settings.restaurantName }),
+        classifyIntent({ message: normalizedText, recentHistory: history, businessName: settings.restaurantName, pendingQuestion }),
+        extractEntities({ message: normalizedText, recentHistory: history, businessName: settings.restaurantName, pendingQuestion }),
       ]);
   let intent = intentResult.intent;
 
@@ -2480,7 +2488,6 @@ async function handleTextMessage(
   // (transicion a ASK_DELIVERY_TYPE) — el punto seguro para ofrecer upsell (ver tryOfferUpsell).
   let upsellTrigger = false;
   const acceptedPaymentMethods = settings.acceptedPaymentMethods as PaymentMethod[];
-  const pendingQuestion = inOrderFlow ? getPendingOrderQuestion(context.orderFlow, acceptedPaymentMethods) : null;
 
   if (isUpsellOptOutMessage(normalizedText)) {
     context.upsell = { ...(context.upsell ?? DEFAULT_UPSELL_STATE), suspended: true };
@@ -3104,6 +3111,7 @@ async function runOrderFlowTurn(params: {
     acceptedPaymentMethods: settings.acceptedPaymentMethods as PaymentMethod[],
     availableDrinks,
     availableSides,
+    isExplicitCancelRequest: isExplicitCancelRequest(text),
   });
 
   if (decision.nextState.step === OrderFlowStep.CONFIRMING || state.step === OrderFlowStep.CONFIRMING) {

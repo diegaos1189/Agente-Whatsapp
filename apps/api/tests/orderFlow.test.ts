@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { Intent, OrderFlowStep } from "@pollos/shared";
-import { decideOrderFlow, initialOrderFlowState, computeOrderTotal } from "../src/modules/conversation/orderFlow.js";
+import {
+  decideOrderFlow,
+  initialOrderFlowState,
+  computeOrderTotal,
+  isExplicitCancelRequest,
+} from "../src/modules/conversation/orderFlow.js";
 import type { ExtractedEntities } from "../src/modules/ai/entityExtractor.js";
 
 const emptyEntities: ExtractedEntities = {
@@ -14,6 +19,7 @@ const emptyEntities: ExtractedEntities = {
   reference: null,
   paymentMethod: null,
   name: null,
+  contactPhone: null,
 };
 
 describe("decideOrderFlow", () => {
@@ -429,6 +435,110 @@ describe("decideOrderFlow", () => {
     expect(decision.cancelled).toBe(true);
     expect(decision.nextState.step).toBe(OrderFlowStep.IDLE);
     expect(decision.nextState.cart).toHaveLength(0);
+  });
+});
+
+// Bug real: el bot se quedaba repitiendo "¿desea agregar algun acompanante?" sin importar que
+// contestara el cliente, y un "No" pelado (que solo declinaba el acompanante) cancelaba el
+// pedido completo. Causa: el clasificador de intencion no sabia que pregunta estaba pendiente,
+// asi que "No" le salia CANCEL, y decideOrderFlow cancelaba en CUALQUIER paso.
+describe("respuestas a preguntas opcionales (acompanantes / bebidas)", () => {
+  const cartWithMainItem = [{ productId: "p1", productName: "Pollo Frito 8 piezas", quantity: 1, unitPrice: 52000 }];
+  const papas = { id: "papas", name: "Papas Francesas", price: 9000, categoryName: "Acompanantes" };
+  const ensalada = { id: "ensalada", name: "Ensalada", price: 7000, categoryName: "Acompanantes" };
+  const gaseosa = { id: "gaseosa", name: "Gaseosa 1.5L", price: 9000, categoryName: "Bebidas" };
+
+  function decide(overrides: Partial<Parameters<typeof decideOrderFlow>[0]>) {
+    return decideOrderFlow({
+      state: { ...initialOrderFlowState, step: OrderFlowStep.ASK_SIDES, cart: cartWithMainItem },
+      intent: Intent.PROVIDE_INFO,
+      entities: emptyEntities,
+      matchedProduct: null,
+      matchedSides: [],
+      unmatchedSideTexts: [],
+      businessDeliveryFee: 5000,
+      currency: "COP",
+      ...overrides,
+    });
+  }
+
+  it("un acompanante suelto ('Ensalada') en ASK_SIDES se agrega al carrito y el flujo avanza sin re-preguntar", () => {
+    const decision = decide({
+      entities: { ...emptyEntities, sides: ["ensalada"] },
+      matchedSides: [ensalada],
+      availableSides: [papas, ensalada],
+      availableDrinks: [gaseosa],
+    });
+
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DRINKS);
+    expect(decision.nextState.sidesAsked).toBe(true);
+    expect(decision.nextState.cart.some((i) => i.productId === "ensalada")).toBe(true);
+    expect(decision.askNext).not.toContain("acompanante");
+    expect(decision.cancelled).toBe(false);
+  });
+
+  it("un 'No' en ASK_SIDES declina el acompanante y avanza a bebidas, sin cancelar ni vaciar el carrito", () => {
+    const decision = decide({ intent: Intent.CANCEL, availableDrinks: [gaseosa] });
+
+    expect(decision.cancelled).toBe(false);
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DRINKS);
+    expect(decision.nextState.sidesAsked).toBe(true);
+    expect(decision.nextState.cart).toEqual(cartWithMainItem);
+    expect(decision.askNext).toContain("Gaseosa 1.5L");
+  });
+
+  it("un 'No' en ASK_DRINKS declina la bebida y avanza a domicilio, conservando el carrito", () => {
+    const decision = decide({
+      state: { ...initialOrderFlowState, step: OrderFlowStep.ASK_DRINKS, cart: cartWithMainItem, sidesAsked: true },
+      intent: Intent.CANCEL,
+    });
+
+    expect(decision.cancelled).toBe(false);
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DELIVERY_TYPE);
+    expect(decision.nextState.drinksAsked).toBe(true);
+    expect(decision.nextState.cart).toEqual(cartWithMainItem);
+  });
+
+  it("una cancelacion explicita ('cancelar mi pedido') en ASK_SIDES si cancela el pedido completo", () => {
+    const decision = decide({ intent: Intent.CANCEL, isExplicitCancelRequest: true });
+
+    expect(decision.cancelled).toBe(true);
+    expect(decision.nextState.step).toBe(OrderFlowStep.IDLE);
+    expect(decision.nextState.cart).toHaveLength(0);
+  });
+
+  it("cancelar en CONFIRMING sigue cancelando el pedido completo (no se degrada a 'declinar item')", () => {
+    const decision = decide({
+      state: {
+        ...initialOrderFlowState,
+        step: OrderFlowStep.CONFIRMING,
+        cart: cartWithMainItem,
+        deliveryType: "PICKUP",
+        paymentMethod: "CASH",
+      },
+      intent: Intent.CANCEL,
+    });
+
+    expect(decision.cancelled).toBe(true);
+    expect(decision.nextState.step).toBe(OrderFlowStep.IDLE);
+    expect(decision.nextState.cart).toHaveLength(0);
+  });
+});
+
+describe("isExplicitCancelRequest", () => {
+  it("reconoce las cancelaciones inequivocas", () => {
+    expect(isExplicitCancelRequest("cancelar mi pedido")).toBe(true);
+    expect(isExplicitCancelRequest("no quiero nada, cancela todo")).toBe(true);
+    expect(isExplicitCancelRequest("anuleme el pedido por favor")).toBe(true);
+    expect(isExplicitCancelRequest("Cancélenlo")).toBe(true);
+  });
+
+  it("no toma por cancelacion un 'no' que solo declina un acompanante o una bebida", () => {
+    expect(isExplicitCancelRequest("no")).toBe(false);
+    expect(isExplicitCancelRequest("no gracias")).toBe(false);
+    expect(isExplicitCancelRequest("asi esta bien")).toBe(false);
+    expect(isExplicitCancelRequest("mejor no")).toBe(false);
+    expect(isExplicitCancelRequest("nada mas")).toBe(false);
   });
 });
 

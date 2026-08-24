@@ -64,6 +64,12 @@ export interface OrderFlowDecideInput {
   availableDrinks?: MatchedProductRef[];
   /** Acompanantes disponibles del catalogo, para ofrecerlos explicitamente en ASK_SIDES. */
   availableSides?: MatchedProductRef[];
+  /**
+   * true si el cliente pidio cancelar con palabras inequivocas ("cancelar", "anule el pedido").
+   * Un intent CANCEL sin esta marca puede ser solo un "no" contestando un slot opcional — ver
+   * la deteccion en isExplicitCancelRequest y el manejo de CANCEL en decideOrderFlow.
+   */
+  isExplicitCancelRequest?: boolean;
 }
 
 export interface OrderFlowDecision {
@@ -167,6 +173,32 @@ function nextStepAfterMainItem(sidesAlreadyHandled: boolean, drinksAlreadyHandle
   return OrderFlowStep.ASK_DELIVERY_TYPE;
 }
 
+/**
+ * Pasos donde la pregunta pendiente es OPCIONAL: el cliente puede decir que no sin que eso
+ * signifique cancelar el pedido. Un "no" pelado en estos pasos llega clasificado como CANCEL
+ * (el clasificador no sabe que pregunta esta contestando), y cancelar el pedido entero por eso
+ * borraba el carrito — ver el manejo de CANCEL en decideOrderFlow.
+ */
+const OPTIONAL_ITEM_STEPS: OrderFlowStep[] = [OrderFlowStep.ASK_SIDES, OrderFlowStep.ASK_DRINKS];
+
+// Solo palabras que NUNCA significan otra cosa. "no", "mejor no", "ya no", "nada mas" quedan
+// deliberadamente fuera: contestando "¿desea algun acompanante?" significan "ese item no",
+// no "cancele mi pedido".
+const EXPLICIT_CANCEL_PATTERN = /\b(cancel\w*|anul\w*)\b/u;
+
+/**
+ * true solo si el cliente pidio cancelar con palabras inequivocas ("cancelar mi pedido",
+ * "anuleme eso"). Sirve para distinguir una cancelacion real de un "no" que el clasificador
+ * manda como CANCEL cuando en realidad esta declinando un acompanante o una bebida.
+ */
+export function isExplicitCancelRequest(text: string): boolean {
+  const normalized = text
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  return EXPLICIT_CANCEL_PATTERN.test(normalized);
+}
+
 function askNextForStep(
   step: OrderFlowStep,
   availableSides: MatchedProductRef[] | undefined,
@@ -197,15 +229,37 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     acceptedPaymentMethods = DEFAULT_PAYMENT_METHODS,
     availableDrinks,
     availableSides,
+    isExplicitCancelRequest: explicitCancel = false,
   } = input;
 
   if (intent === Intent.CANCEL && state.step !== OrderFlowStep.IDLE) {
+    // Bug real: contestar "No" a "¿desea agregar algun acompanante?" borraba TODO el pedido.
+    // El clasificador no ve que pregunta esta pendiente, asi que un "no" pelado le sale como
+    // CANCEL. En los pasos opcionales (acompanantes/bebidas) un CANCEL que no venga con
+    // palabras explicitas de cancelacion se trata como "no quiero ese item" y el flujo avanza,
+    // conservando el carrito. En CONFIRMING y demas pasos, CANCEL sigue cancelando el pedido.
+    const decliningOptionalItem = OPTIONAL_ITEM_STEPS.includes(state.step) && !explicitCancel;
+    if (!decliningOptionalItem) {
+      return {
+        nextState: { ...initialOrderFlowState },
+        facts: ["Su pedido fue cancelado, no se genero ningun cobro."],
+        askNext: null,
+        readyToCreateOrder: false,
+        cancelled: true,
+      };
+    }
+
+    const decliningDrinks = state.step === OrderFlowStep.ASK_DRINKS;
+    const drinksHandled = decliningDrinks || state.drinksAsked;
+    // Al llegar a cualquiera de estos dos pasos los acompanantes ya se preguntaron o se
+    // resolvieron en el mismo mensaje, por eso sidesAlreadyHandled va en true.
+    const nextStep = nextStepAfterMainItem(true, drinksHandled);
     return {
-      nextState: { ...initialOrderFlowState },
-      facts: ["Su pedido fue cancelado, no se genero ningun cobro."],
-      askNext: null,
+      nextState: { ...state, sidesAsked: true, drinksAsked: drinksHandled, step: nextStep },
+      facts: [decliningDrinks ? "Listo, sin bebidas." : "Listo, sin acompanantes."],
+      askNext: askNextForStep(nextStep, availableSides, availableDrinks, currency),
       readyToCreateOrder: false,
-      cancelled: true,
+      cancelled: false,
     };
   }
 
@@ -646,7 +700,9 @@ export function getPendingOrderQuestion(
         ? `¿cuantas unidades de ${state.pendingProduct.name} desea?`
         : "¿que le gustaria pedir?";
     case OrderFlowStep.ASK_SIDES:
-      return "¿desea agregar algun acompanante como papas, arepa o ensalada?";
+      // Sin ejemplos de comida concretos: este texto tambien viaja en el prompt de la IA y el
+      // catalogo real lo pone buildSidesAskNext (el tipo de producto depende del negocio).
+      return "¿desea agregar algun acompanante?";
     case OrderFlowStep.ASK_DRINKS:
       return "¿que desea tomar?";
     case OrderFlowStep.ASK_DELIVERY_TYPE:
