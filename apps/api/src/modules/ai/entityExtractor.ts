@@ -100,15 +100,29 @@ Los clientes colombianos (incluye jerga paisa/Antioquia y otras regiones) suelen
 - Variantes foneticas o regionales de sabores/marcas como "barbiquiu", "barbikiu", "cocacola", "coca cola", "picantico" o "salsita" deben mapearse a la forma mas probable segun el contexto del menu, no descartarse.
 - Tolera errores ortograficos, letras dobladas o cambiadas foneticamente (ej: "s"/"z" intercambiadas, letras que faltan o sobran) y abreviaturas - interpreta la palabra mas parecida del contexto en vez de ignorar el dato.
 - Los audios transcritos suelen llegar como una sola frase larga sin puntuacion, mezclando saludo, pedido, modificadores y entrega todo junto (ej: "vea pues mi rey mandeme uno con papa y una gaseosa grande pa la casa") - procesa la frase completa y extrae TODOS los datos presentes, no solo el primero.
-- Cantidades dichas en palabras: "litro y medio" = "1.5 litros" o "1.5L", "media libra" = "0.5 libras", "docena" = "12". Normaliza esto en el campo "size" usando numeros (ej: size="1.5L") para que coincida con como esta escrito en el menu, en vez de dejarlo en palabras.`;
+- Cantidades dichas en palabras: "litro y medio" = "1.5 litros" o "1.5L", "media libra" = "0.5 libras", "docena" = "12". Normaliza esto en el campo "size" usando numeros (ej: size="1.5L") para que coincida con como esta escrito en el menu, en vez de dejarlo en palabras.
+
+Pregunta pendiente del bot: si el input trae una linea "El bot esta esperando respuesta a: ...", el ultimo mensaje casi siempre responde ESA pregunta. Usala para decidir en que campo va un mensaje corto o ambiguo, en vez de dejar todo en null o meterlo en el campo equivocado:
+- Si la pregunta pendiente es por ACOMPANANTES, un nombre de comida suelto ("ensalada", "papa salada", "arepa", "papitas") va en "sides" como texto libre, NUNCA en "productType" (ese campo es solo para el producto principal del pedido). Lo mismo si menciona varios ("ensalada y papas").
+- Si la pregunta pendiente es por BEBIDAS, la bebida mencionada ("gaseosa", "coca cola", "jugo") va en "productType" (y "quantity"/"size" si los dice).
+- Si la pregunta pendiente es por CANTIDAD, un numero suelto ("dos", "2") va en "quantity"; si es por DIRECCION, el texto va en "address"/"neighborhood"/"reference"; si es por METODO DE PAGO, va en "paymentMethod"; si es por domicilio o recoger, va en "deliveryType".
+- Si el cliente declina la pregunta pendiente ("no", "no gracias", "asi esta bien", "nada mas", "ninguno"), no esta nombrando ningun producto: deja TODOS los campos en null, no inventes un productType ni un side.`;
 }
 
 export async function extractEntities(params: {
   message: string;
   recentHistory: string;
   businessName: string;
+  /**
+   * Pregunta del flujo de pedido que quedo pendiente en el turno anterior (ver
+   * getPendingOrderQuestion en orderFlow). Sin este dato, un "Ensalada" suelto contestando la
+   * pregunta de acompanantes salia en productType, sides quedaba vacio y el bot re-preguntaba
+   * lo mismo en bucle.
+   */
+  pendingQuestion?: string | null;
 }): Promise<ExtractedEntities> {
-  const input = `Historial reciente:\n${params.recentHistory}\n\nUltimo mensaje del cliente: "${params.message}"`;
+  const pendingLine = params.pendingQuestion ? `El bot esta esperando respuesta a: ${params.pendingQuestion}\n\n` : "";
+  const input = `${pendingLine}Historial reciente:\n${params.recentHistory}\n\nUltimo mensaje del cliente: "${params.message}"`;
 
   const raw = await callAiJson({
     instructions: buildInstructions(params.businessName),
