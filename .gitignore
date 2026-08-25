@@ -22,3 +22,8 @@ C:/
 # Archivos temporales que pnpm crea para probar soporte de hardlinks en el filesystem
 # (aparecen como _tmp_<pid>_<hash> de 0 bytes, sobre todo en unidades exFAT).
 _tmp_*
+
+# Configuracion local de herramientas de agentes (Claude Code y similares): es especifica
+# de la maquina/usuario, no del proyecto.
+.claude/
+.agents/
