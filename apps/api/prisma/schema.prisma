@@ -144,6 +144,9 @@ model Category {
   name      String
   slug      String    @unique
   sortOrder Int       @default(0)
+  parentCategoryId String?
+  parent    Category? @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
   products  Product[]
   recommendationRules ProductRecommendation[]
 

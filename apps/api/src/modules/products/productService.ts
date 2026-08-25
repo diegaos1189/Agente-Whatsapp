@@ -134,6 +134,7 @@ async function fetchCatalog(): Promise<CategoryDTO[]> {
     name: cat.name,
     slug: cat.slug,
     sortOrder: cat.sortOrder,
+    parentCategoryId: cat.parentCategoryId,
     products: cat.products.map((p) => productToDTO(p, cat.name, nameById)),
   }));
 }

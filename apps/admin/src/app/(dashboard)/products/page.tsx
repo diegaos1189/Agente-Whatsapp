@@ -17,7 +17,7 @@ export default async function ProductsPage() {
 
       <div style={{ display: "flex", gap: 16, marginBottom: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 260px", maxWidth: 320 }}>
-          <AddCategoryForm />
+          <AddCategoryForm categories={categories} />
         </div>
         <div style={{ flex: "1 1 300px", maxWidth: 360 }}>
           <MenuOrderPanel categories={categories} />

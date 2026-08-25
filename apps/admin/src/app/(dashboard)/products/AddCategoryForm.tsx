@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiClientFetch } from "@/lib/apiClient";
+import type { CategoryDTO } from "@pollos/shared";
 
 function slugify(text: string): string {
   return text
@@ -13,9 +14,10 @@ function slugify(text: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-export function AddCategoryForm() {
+export function AddCategoryForm({ categories }: { categories: CategoryDTO[] }) {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [parentCategoryId, setParentCategoryId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,9 +28,10 @@ export function AddCategoryForm() {
     try {
       await apiClientFetch("/categories", {
         method: "POST",
-        body: JSON.stringify({ name, slug: slugify(name) }),
+        body: JSON.stringify({ name, slug: slugify(name), parentCategoryId: parentCategoryId || null }),
       });
       setName("");
+      setParentCategoryId("");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error creando categoria");
@@ -45,6 +48,20 @@ export function AddCategoryForm() {
           Nombre
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Postres" required />
         </label>
+        <label>
+          Categoria padre (opcional)
+          <select value={parentCategoryId} onChange={(e) => setParentCategoryId(e.target.value)}>
+            <option value="">Ninguna — es una categoria principal</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+          Si eliges una categoria padre, esta se muestra como subcategoria dentro de ella en el menu de WhatsApp.
+        </p>
         {error && <div className="error-text">{error}</div>}
       </div>
       <button type="submit" className="cta" disabled={saving || !name.trim()}>

@@ -469,6 +469,8 @@ describe("handleIncomingMessage lease race", () => {
     expect(state.inboundMessages).toHaveLength(2);
     expect(state.inboundMessages.every((item) => item.processingStatus === "PROCESSED")).toBe(true);
     expect(state.sentTexts).toHaveLength(2);
-    expect(state.sentTexts[1]?.body).toContain("Pollos - Pollo 8 presas");
+    // "1" = VIEW_MENU en el shortcut de bienvenida: ahora primero muestra categorias
+    // numeradas (menu en dos pasos) en vez del listado plano de productos.
+    expect(state.sentTexts[1]?.body).toContain("1. Pollos");
   });
 });

@@ -34,6 +34,7 @@ export interface CategoryDTO {
   name: string;
   slug: string;
   sortOrder: number;
+  parentCategoryId: string | null;
   products: ProductDTO[];
 }
 

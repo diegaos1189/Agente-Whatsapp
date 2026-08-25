@@ -44,11 +44,13 @@ const categoryCreateSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, "slug solo puede tener minusculas, numeros y guiones"),
   sortOrder: z.number().int().optional(),
+  parentCategoryId: z.string().nullable().optional(),
 });
 
 const categoryUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   sortOrder: z.number().int().optional(),
+  parentCategoryId: z.string().nullable().optional(),
 });
 
 const promotionCreateSchema = z.object({
@@ -131,6 +133,10 @@ export async function productRoutes(app: FastifyInstance) {
     const body = categoryCreateSchema.parse(request.body);
     const existing = await prisma.category.findUnique({ where: { slug: body.slug } });
     if (existing) return reply.status(409).send({ error: "Ya existe una categoria con ese slug" });
+    if (body.parentCategoryId) {
+      const parent = await prisma.category.findUnique({ where: { id: body.parentCategoryId } });
+      if (!parent) return reply.status(400).send({ error: "La categoria padre indicada no existe" });
+    }
     const category = await prisma.category.create({ data: body });
     invalidateCatalogCache();
     return category;
@@ -142,6 +148,13 @@ export async function productRoutes(app: FastifyInstance) {
     const body = categoryUpdateSchema.parse(request.body);
     const category = await prisma.category.findUnique({ where: { id } });
     if (!category) return reply.status(404).send({ error: "Categoria no encontrada" });
+    if (body.parentCategoryId) {
+      if (body.parentCategoryId === id) {
+        return reply.status(400).send({ error: "Una categoria no puede ser su propia categoria padre" });
+      }
+      const parent = await prisma.category.findUnique({ where: { id: body.parentCategoryId } });
+      if (!parent) return reply.status(400).send({ error: "La categoria padre indicada no existe" });
+    }
 
     const updated = await prisma.category.update({ where: { id }, data: body });
     invalidateCatalogCache();
@@ -159,6 +172,12 @@ export async function productRoutes(app: FastifyInstance) {
       return reply
         .status(409)
         .send({ error: `Esta categoria tiene ${productCount} producto(s) asociado(s). Mueve o elimina esos productos primero.` });
+    }
+    const childCount = await prisma.category.count({ where: { parentCategoryId: id } });
+    if (childCount > 0) {
+      return reply
+        .status(409)
+        .send({ error: `Esta categoria tiene ${childCount} subcategoria(s). Mueve o elimina esas subcategorias primero.` });
     }
 
     await prisma.category.delete({ where: { id } });

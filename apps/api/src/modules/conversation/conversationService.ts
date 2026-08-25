@@ -146,7 +146,7 @@ export interface InboundMessageInput {
 }
 
 /** Que menu numerado se le acaba de mandar al cliente (para interpretar su proxima respuesta "1"/"2"/"3"). */
-type PendingMenu = "WELCOME" | "RETURNING" | null;
+type PendingMenu = "WELCOME" | "RETURNING" | "CATEGORIES" | "PRODUCTS" | null;
 
 interface PendingRepeatReplacement {
   sourceOrderId: string;
@@ -185,6 +185,10 @@ const DEFAULT_UPSELL_STATE: UpsellContextState = {
 interface ConversationContext {
   orderFlow: OrderFlowState;
   pendingMenu?: PendingMenu;
+  /** IDs de categoria mostrados numerados cuando pendingMenu === "CATEGORIES", en el mismo orden. */
+  pendingCategoryIds?: string[] | null;
+  /** IDs de producto mostrados numerados cuando pendingMenu === "PRODUCTS", en el mismo orden. */
+  pendingProductIds?: string[] | null;
   activeCart?: StructuredCartState | null;
   checkout?: CheckoutStateSnapshot | null;
   repeatOrder?: RepeatOrderContextState | null;
@@ -207,6 +211,8 @@ function parseContext(raw: unknown): ConversationContext {
   return {
     orderFlow: initialOrderFlowState,
     pendingMenu: null,
+    pendingCategoryIds: null,
+    pendingProductIds: null,
     activeCart: null,
     checkout: buildEmptyCheckoutState(),
     repeatOrder: { pendingReplacement: null, lastSourceOrderId: null, lastSourceOrderCode: null },
@@ -223,6 +229,8 @@ function buildPersistedConversationContext(context: ConversationContext): Conver
   return {
     orderFlow: context.orderFlow,
     pendingMenu: context.pendingMenu ?? null,
+    pendingCategoryIds: context.pendingCategoryIds ?? null,
+    pendingProductIds: context.pendingProductIds ?? null,
     activeCart: context.activeCart ?? null,
     checkout: context.checkout ?? buildEmptyCheckoutState(),
     repeatOrder: context.repeatOrder ?? { pendingReplacement: null, lastSourceOrderId: null, lastSourceOrderCode: null },
@@ -2351,6 +2359,63 @@ async function handleTextMessage(
   const normalizedText = normalizeLocalizedText(text);
   const inOrderFlowAlready = context.orderFlow.step !== OrderFlowStep.IDLE;
 
+  // El cliente respondio con el numero de una categoria mostrada (menu numerado en dos
+  // pasos): le mostramos los productos numerados de esa categoria y cortamos aqui, sin
+  // pasar por clasificacion de IA (numero limpio = seleccion de lista, no texto libre).
+  if (!inOrderFlowAlready && context.pendingMenu === "CATEGORIES") {
+    const chosenIndex = parseMenuSelectionIndex(normalizedText);
+    const categoryId = chosenIndex !== null ? (context.pendingCategoryIds ?? [])[chosenIndex - 1] : undefined;
+    if (categoryId) {
+      // Si la categoria elegida tiene subcategorias, las mostramos numeradas (mismo paso,
+      // un nivel mas profundo) en vez de saltar directo a productos — asi soporta cualquier
+      // profundidad de categoria > subcategoria > sub-subcategoria configurada en el panel.
+      const numberedChildren = await buildNumberedCategoriesReply(categoryId);
+      if (numberedChildren) {
+        context.pendingCategoryIds = numberedChildren.categoryIds;
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: { context: toJsonContext(buildPersistedConversationContext(context)) },
+        });
+        await sendAndLog(conversationId, phone, numberedChildren.text, receivedAt);
+        return;
+      }
+
+      const categories = await listCatalog();
+      const category = categories.find((c) => c.id === categoryId);
+      const numbered = category ? buildNumberedProductsReply(category.name, category.products, settings) : null;
+      if (numbered) {
+        context.pendingMenu = "PRODUCTS";
+        context.pendingCategoryIds = null;
+        context.pendingProductIds = numbered.productIds;
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: { context: toJsonContext(buildPersistedConversationContext(context)) },
+        });
+        await sendAndLog(conversationId, phone, numbered.text, receivedAt);
+        return;
+      }
+    }
+    // Numero invalido o categoria sin productos ni subcategorias mostrables: seguimos el
+    // flujo normal (pendingMenu se limpia mas abajo, como cualquier otro pendingMenu vencido).
+  }
+
+  // El cliente respondio con el numero de un producto mostrado: en vez de reinventar la
+  // logica de cantidad/acompanantes/precios, forzamos el intent y las entidades como si
+  // hubiera escrito el nombre EXACTO del producto, y dejamos que el flujo normal de pedidos
+  // (mas abajo) lo procese igual que cualquier pedido por texto.
+  let forcedProductName: string | null = null;
+  if (!inOrderFlowAlready && context.pendingMenu === "PRODUCTS") {
+    const chosenIndex = parseMenuSelectionIndex(normalizedText);
+    const productId = chosenIndex !== null ? (context.pendingProductIds ?? [])[chosenIndex - 1] : undefined;
+    if (productId) {
+      const categories = await listCatalog();
+      const product = categories.flatMap((cat) => cat.products).find((p) => p.id === productId);
+      if (product) {
+        forcedProductName = product.name;
+      }
+    }
+  }
+
   const welcomeShortcut: Record<string, string> = {
     "1": Intent.VIEW_MENU,
     "2": Intent.ORDER_PRODUCT,
@@ -2368,9 +2433,13 @@ async function handleTextMessage(
 
   if (context.pendingMenu) {
     context.pendingMenu = null;
+    context.pendingCategoryIds = null;
+    context.pendingProductIds = null;
   }
 
-  const [intentResult, entities] = shortcutIntent
+  const [intentResult, entities] = forcedProductName
+    ? [{ intent: Intent.ORDER_PRODUCT, confidence: 1 }, { ...EMPTY_ENTITIES, productType: forcedProductName }]
+    : shortcutIntent
     ? [{ intent: shortcutIntent, confidence: 1 }, EMPTY_ENTITIES]
     : await Promise.all([
         classifyIntent({ message: normalizedText, recentHistory: history, businessName: settings.restaurantName }),
@@ -2624,9 +2693,27 @@ async function handleTextMessage(
       }
     } else if (intent === Intent.VIEW_MENU) {
       const categoryMatch = await findCategoryMatch(normalizedText);
-      replyText = categoryMatch
-        ? await buildCategoryReply(categoryMatch, settings, pendingQuestion)
-        : await buildMenuReply(settings, pendingQuestion);
+      if (categoryMatch) {
+        const numbered = buildNumberedProductsReply(categoryMatch.categoryName, categoryMatch.products, settings);
+        if (numbered) {
+          replyText = numbered.text;
+          context.pendingMenu = "PRODUCTS";
+          context.pendingCategoryIds = null;
+          context.pendingProductIds = numbered.productIds;
+        } else {
+          replyText = await buildCategoryReply(categoryMatch, settings, pendingQuestion);
+        }
+      } else {
+        const numberedCategories = await buildNumberedCategoriesReply();
+        if (numberedCategories) {
+          replyText = numberedCategories.text;
+          context.pendingMenu = "CATEGORIES";
+          context.pendingCategoryIds = numberedCategories.categoryIds;
+          context.pendingProductIds = null;
+        } else {
+          replyText = await buildMenuReply(settings, pendingQuestion);
+        }
+      }
     } else if (intent === Intent.ASK_PROMOTIONS) {
       replyText = await buildPromotionsReply(settings, pendingQuestion);
     } else if (
@@ -2804,6 +2891,73 @@ async function handleTextMessage(
 }
 
 type BusinessSettings = Awaited<ReturnType<typeof getBusinessSettings>>;
+
+/**
+ * Interpreta una respuesta del cliente como el numero de una lista mostrada (categoria o
+ * producto). Deliberadamente estricto: solo acepta un numero limpio (con a lo sumo una
+ * palabra de relleno tipo "el"/"opcion" antes), nunca un numero mezclado con otras palabras
+ * ("quiero 2 pollos"), para no confundir cantidades u otros numeros con una seleccion de
+ * lista. Si no es un numero limpio, devuelve null y el mensaje sigue el flujo normal.
+ */
+function parseMenuSelectionIndex(text: string): number | null {
+  const withoutFiller = text
+    .trim()
+    .toLowerCase()
+    .replace(/^(el|la|numero|número|opcion|opción)\s+/i, "")
+    .replace(/[.,)]+$/g, "")
+    .trim();
+  if (/^\d{1,3}$/.test(withoutFiller)) {
+    return Number(withoutFiller);
+  }
+  return null;
+}
+
+/** Una categoria es visible si tiene algun producto mostrable, o alguna subcategoria visible (recursivo). */
+function categoryHasVisibleContent(
+  category: Awaited<ReturnType<typeof listCatalog>>[number],
+  allCategories: Awaited<ReturnType<typeof listCatalog>>,
+): boolean {
+  if (category.products.some((p) => p.showInMenu)) return true;
+  const children = allCategories.filter((c) => c.parentCategoryId === category.id);
+  return children.some((child) => categoryHasVisibleContent(child, allCategories));
+}
+
+/**
+ * Lista numerada de (sub)categorias visibles bajo un padre dado (null = categorias
+ * principales), en el orden configurado en el panel. Se usa tanto para el primer paso del
+ * menu como para cada nivel de subcategoria que el cliente vaya eligiendo.
+ */
+async function buildNumberedCategoriesReply(
+  parentCategoryId: string | null = null,
+): Promise<{ text: string; categoryIds: string[] } | null> {
+  const categories = await listCatalog();
+  const scoped = categories.filter((cat) => (cat.parentCategoryId ?? null) === parentCategoryId);
+  const visible = scoped.filter((cat) => categoryHasVisibleContent(cat, categories));
+  if (visible.length === 0) return null;
+  const lines = visible.map((cat, i) => `${i + 1}. ${cat.name}`);
+  const heading = parentCategoryId ? "Estas son las opciones:" : "Estas son nuestras categorias:";
+  const text = `${heading}\n\n${lines.join("\n")}\n\nResponde con el numero de la opcion que te interesa.`;
+  return { text, categoryIds: visible.map((c) => c.id) };
+}
+
+/** Lista numerada de productos mostrables de una categoria, en el orden configurado en el panel. */
+function buildNumberedProductsReply(
+  categoryName: string,
+  products: Awaited<ReturnType<typeof listCatalog>>[number]["products"],
+  settings: BusinessSettings,
+): { text: string; productIds: string[] } | null {
+  const visible = products.filter((p) => p.showInMenu);
+  if (visible.length === 0) return null;
+  const lines = visible.map((p, i) => {
+    const comboDetail =
+      p.isCombo && p.comboItems.length > 0
+        ? ` [incluye: ${p.comboItems.map((item) => `${item.quantity}x ${item.productName}`).join(", ")}]`
+        : "";
+    return `${i + 1}. ${p.name}${p.unitCount ? ` (${p.unitCount} unidades)` : ""}: ${formatCurrency(p.price, settings.currency)}${comboDetail}`;
+  });
+  const text = `*${categoryName}*\n\n${lines.join("\n")}\n\nResponde con el numero del producto que quieres pedir.`;
+  return { text, productIds: visible.map((p) => p.id) };
+}
 
 async function buildMenuReply(settings: BusinessSettings, pendingQuestion?: string | null): Promise<string> {
   const categories = await listCatalog();

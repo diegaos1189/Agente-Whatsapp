@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Como Funciona Este Agente</title>
+  <style>
+    :root {
+      --bg: #f5efe4;
+      --panel: #fffaf0;
+      --ink: #1f2937;
+      --muted: #5b6470;
+      --line: #d8c9a8;
+      --accent: #d97706;
+      --accent-2: #0f766e;
+      --accent-3: #9a3412;
+      --shadow: 0 18px 40px rgba(31, 41, 55, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(217, 119, 6, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(15, 118, 110, 0.14), transparent 24%),
+        linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 64px;
+    }
+
+    .hero,
+    .card {
+      background: rgba(255, 250, 240, 0.92);
+      border: 1px solid rgba(216, 201, 168, 0.95);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 32px;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.8rem;
+      color: var(--accent-3);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.05;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 760px;
+      font-size: 1.08rem;
+      line-height: 1.65;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .card {
+      padding: 26px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 1.45rem;
+    }
+
+    .flow {
+      display: grid;
+      gap: 18px;
+      position: relative;
+    }
+
+    .node {
+      position: relative;
+      padding: 18px 20px;
+      background: #fffdf7;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+
+    .node::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -18px;
+      width: 2px;
+      height: 18px;
+      background: linear-gradient(180deg, var(--line), transparent);
+      transform: translateX(-50%);
+    }
+
+    .node:last-child::after,
+    .row .node::after,
+    .branches .node::after {
+      display: none;
+    }
+
+    .node strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 1.04rem;
+    }
+
+    .node p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .decision {
+      border-color: rgba(15, 118, 110, 0.4);
+      background: linear-gradient(180deg, rgba(15, 118, 110, 0.08), rgba(255, 253, 247, 0.96));
+    }
+
+    .action {
+      border-left: 6px solid var(--accent);
+    }
+
+    .integrations {
+      border-left: 6px solid var(--accent-2);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .branches {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 2px;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .legend {
+      display: grid;
+      gap: 12px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      margin-bottom: 10px;
+      background: rgba(217, 119, 6, 0.12);
+      color: var(--accent-3);
+    }
+
+    .mini {
+      padding: 16px 18px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #fffdf7;
+    }
+
+    .mini strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .mini p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .foot {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .grid,
+      .row,
+      .branches {
+        grid-template-columns: 1fr;
+      }
+
+      .wrap {
+        width: min(100% - 20px, 1120px);
+        padding-top: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <p class="eyebrow">Mapa del Agente</p>
+      <h1>Como funciona este programa de agente</h1>
+      <p>
+        Este agente recibe una instruccion tuya, revisa el contexto disponible, decide si debe leer archivos, usar herramientas,
+        buscar informacion externa o crear documentos, y luego te entrega un resultado verificando lo que hizo.
+      </p>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Flujo principal</h2>
+        <div class="flow">
+          <div class="node action">
+            <strong>1. Tu envias una tarea</strong>
+            <p>Puede ser una pregunta, una peticion de codigo, un diagrama, una automatizacion o una conexion con otra herramienta.</p>
+          </div>
+
+          <div class="node decision">
+            <strong>2. El agente clasifica la tarea</strong>
+            <p>Decide si necesita explicar, modificar archivos, buscar datos actuales o usar una integracion externa.</p>
+          </div>
+
+          <div class="branches">
+            <div class="node">
+              <strong>Explicar</strong>
+              <p>Lee el contexto y responde con una sintesis clara.</p>
+            </div>
+            <div class="node">
+              <strong>Editar o crear</strong>
+              <p>Inspecciona el proyecto y hace cambios reales en archivos.</p>
+            </div>
+            <div class="node">
+              <strong>Buscar o conectar</strong>
+              <p>Comprueba herramientas disponibles y consulta fuentes o servicios.</p>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="node action">
+              <strong>3. Recoleccion de contexto</strong>
+              <p>Lee archivos locales, estructura del proyecto e instrucciones del entorno antes de actuar.</p>
+            </div>
+            <div class="node integrations">
+              <strong>4. Uso de herramientas</strong>
+              <p>Puede usar web, archivos locales, GitHub, Notion, Adobe o generacion de imagenes, si estan disponibles.</p>
+            </div>
+          </div>
+
+          <div class="node action">
+            <strong>5. Ejecucion</strong>
+            <p>Realiza el trabajo: editar codigo, crear HTML, redactar documentos, resumir resultados o preparar una integracion.</p>
+          </div>
+
+          <div class="node decision">
+            <strong>6. Verificacion</strong>
+            <p>Comprueba el resultado cuando puede hacerlo, para reducir errores antes de entregartelo.</p>
+          </div>
+
+          <div class="node action">
+            <strong>7. Entrega final</strong>
+            <p>Te explica que hizo, donde quedaron los archivos y cualquier limite real del entorno.</p>
+          </div>
+        </div>
+      </article>
+
+      <aside class="card">
+        <h2>Lo importante</h2>
+        <div class="legend">
+          <div class="mini">
+            <span class="pill">Logica base</span>
+            <strong>No improvisa a ciegas</strong>
+            <p>Primero intenta entender el pedido y el entorno antes de tocar archivos o afirmar algo.</p>
+          </div>
+          <div class="mini">
+            <span class="pill">Conexiones</span>
+            <strong>Solo usa integraciones reales</strong>
+            <p>Si una app no esta disponible aqui, no puede conectarse directo. En ese caso propone una alternativa.</p>
+          </div>
+          <div class="mini">
+            <span class="pill">Salida</span>
+            <strong>Puede crear documentos</strong>
+            <p>HTML, Markdown, SVG, PDF, imagenes, codigo y documentacion tecnica.</p>
+          </div>
+        </div>
+
+        <div class="foot">
+          En este entorno, yo si puedo trabajar con archivos locales y algunas integraciones visibles. `Miro` no aparece activa ahora mismo,
+          por eso no puedo abrir tu tablero directamente desde aqui.
+        </div>
+      </aside>
+    </section>
+
+    <section class="card" style="margin-top: 24px;">
+      <h2>Programas o servicios con los que puedo trabajar aqui</h2>
+      <ul>
+        <li>Archivos locales del proyecto.</li>
+        <li>Busqueda web para informacion actual cuando hace falta verificar.</li>
+        <li>GitHub, si la integracion esta disponible.</li>
+        <li>Notion, si la integracion esta disponible.</li>
+        <li>Adobe para algunos flujos de diseno y archivos.</li>
+        <li>Generacion de imagenes y documentos.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
