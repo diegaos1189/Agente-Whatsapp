@@ -44,6 +44,7 @@ export function OrderPanel({
   const [selectedDrink, setSelectedDrink] = useState("");
   const [savedPending, setSavedPending] = useState(false);
   const [confirmingWithAi, setConfirmingWithAi] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   async function confirmPayment() {
     if (!order) return;
@@ -135,6 +136,15 @@ export function OrderPanel({
   }
 
   const allProducts = categories.flatMap((c) => c.products);
+  const matchingProducts = searchQuery.trim()
+    ? allProducts.filter(
+        (p) =>
+          p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+          p.categoryName.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
+
   const sideProducts = allProducts.filter((p) => /acompa/i.test(p.categoryName));
   const drinkProducts = allProducts.filter((p) => /bebida/i.test(p.categoryName));
   const mainProducts = allProducts.filter((p) => !/acompa/i.test(p.categoryName) && !/bebida/i.test(p.categoryName));
@@ -283,20 +293,119 @@ export function OrderPanel({
         <p className="muted" style={{ marginTop: 0 }}>Este cliente no tiene un pedido. Crea uno manual:</p>
       )}
 
+      {/* Búsqueda manual de productos */}
+      <div style={{ marginBottom: 14 }}>
+        <div className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
+          Búsqueda manual de productos
+        </div>
+        <div style={{ position: "relative" }}>
+          <input
+            type="text"
+            placeholder="🔍 Buscar por nombre o categoría..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: "100%", padding: "8px 12px", fontSize: 13, borderRadius: 6, border: "1px solid var(--border)" }}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              style={{
+                position: "absolute",
+                right: 8,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {searchQuery.trim() !== "" && (
+          <div
+            style={{
+              marginTop: 6,
+              maxHeight: 180,
+              overflowY: "auto",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--surface-solid, #fff)",
+              padding: 6,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            {matchingProducts.length === 0 ? (
+              <div className="muted" style={{ fontSize: 12, padding: 6, textAlign: "center" }}>
+                No se encontraron productos que coincidan con "{searchQuery}"
+              </div>
+            ) : (
+              matchingProducts.map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "6px 8px",
+                    borderRadius: 4,
+                    fontSize: 12,
+                    background: "var(--surface-hover, rgba(0,0,0,0.03))",
+                  }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    <span style={{ fontWeight: 600 }}>{p.name}</span>
+                    <span className="muted" style={{ fontSize: 11 }}>
+                      {p.categoryName} — ${new Intl.NumberFormat("es-CO").format(p.price)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => addLine(p.id)}
+                    style={{ padding: "4px 10px", fontSize: 11, flexShrink: 0 }}
+                  >
+                    + Agregar
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Casillas de selección: Productos, Acompañantes, Bebidas */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
         {[
-          { label: "Platos fuertes", products: mainProducts, value: selectedMain, setValue: setSelectedMain },
+          { label: "Productos", products: mainProducts, value: selectedMain, setValue: setSelectedMain },
           { label: "Acompañantes", products: sideProducts, value: selectedSide, setValue: setSelectedSide },
           { label: "Bebidas", products: drinkProducts, value: selectedDrink, setValue: setSelectedDrink },
-        ].map(({ label, products, value, setValue }) =>
-          products.length === 0 ? null : (
-            <div key={label}>
-              <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+        ].map(({ label, products, value, setValue }) => (
+          <div key={label}>
+            <div className="muted" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }}>
+              {label}
+            </div>
+            {products.length === 0 ? (
+              <div className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>
+                Sin {label.toLowerCase()} disponibles
+              </div>
+            ) : (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <select value={value || products[0]!.id} onChange={(e) => setValue(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
+                <select
+                  value={value || products[0]!.id}
+                  onChange={(e) => setValue(e.target.value)}
+                  style={{ flex: 1, minWidth: 0 }}
+                >
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {p.name} (${new Intl.NumberFormat("es-CO").format(p.price)})
                     </option>
                   ))}
                 </select>
@@ -309,9 +418,9 @@ export function OrderPanel({
                   + Agregar
                 </button>
               </div>
-            </div>
-          ),
-        )}
+            )}
+          </div>
+        ))}
       </div>
 
       {cart.length > 0 && (
