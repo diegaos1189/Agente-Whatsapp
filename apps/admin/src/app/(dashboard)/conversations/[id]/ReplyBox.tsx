@@ -43,7 +43,9 @@ export function ReplyBox({
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={disabled ? disabledReason : "Escribe un mensaje"}
+          // El motivo completo va en la linea de abajo: como placeholder se cortaba a media
+          // frase en columnas angostas y ademas quedaba repetido dos veces en pantalla.
+          placeholder={disabled ? "No puedes responder ahora" : "Escribe un mensaje"}
           className="wa-compose-input"
           disabled={sending || disabled}
         />

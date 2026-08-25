@@ -475,6 +475,11 @@ a.link:hover { text-decoration: underline; }
 .chat-header {
   margin-top: 20px;
   display: flex;
+  /* El ancho util del chat depende del panel de pedido que tiene al lado, no del ancho de la
+     ventana, asi que aqui no sirve un breakpoint: el encabezado deja caer los botones a una
+     segunda linea en cuanto el nombre y el telefono se quedan sin espacio. Sin esto se
+     encimaban sobre "Escalar a humano". */
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   background: #075e54;
@@ -483,8 +488,29 @@ a.link:hover { text-decoration: underline; }
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
-.chat-header-name { font-weight: 600; font-size: 0.9375rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-header-info { flex: 1 1 150px; min-width: 0; }
+
+.chat-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* Las tres lineas de identidad se recortan con puntos suspensivos: un numero largo o un
+   estado como WAITING_HUMAN desbordaban la caja y se salian del encabezado. */
+.chat-header-name,
+.chat-header-phone,
+.chat-header-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-header-name { font-weight: 600; font-size: 0.9375rem; }
 .chat-header-phone { font-size: 0.75rem; opacity: 0.8; }
+.chat-header-status { font-size: 0.75rem; opacity: 0.75; margin-top: 4px; }
 
 .chat-header-btn {
   flex-shrink: 0;
@@ -543,7 +569,12 @@ a.link:hover { text-decoration: underline; }
 .chat-bubble {
   padding: 6px 9px 8px;
   border-radius: 8px;
-  max-width: 65%;
+  /* 65% del ancho disponible, pero nunca tan angosta como para dejar el texto en una tira de
+     tres palabras por linea: en una columna estrecha manda el piso de 260px, con techo del 85%
+     para que siga leyendose como chat. El min(...) evita que el piso supere al techo en una
+     columna diminuta, caso en que clamp devolveria el piso y la burbuja desbordaria. */
+  max-width: clamp(min(260px, 85%), 65%, 85%);
+  overflow-wrap: anywhere;
   font-size: 0.8875rem;
   line-height: 1.35;
   box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
@@ -584,6 +615,9 @@ a.link:hover { text-decoration: underline; }
 
 .wa-compose-input {
   flex: 1;
+  /* min-width: 0 -- sin esto el ancho intrinseco del input impide que el flex lo encoja y la
+     barra de escritura desborda la columna del chat en anchos chicos. */
+  min-width: 0;
   border: none;
   background: transparent;
   font-size: 14px;
@@ -739,24 +773,26 @@ a.link:hover { text-decoration: underline; }
   .desktop-topbar { display: none; }
 }
 
-/* Detalle de conversacion: chat + panel de pedido lado a lado en escritorio, apilados
-   (pedido debajo del chat) en pantallas angostas para que las burbujas tengan espacio real. */
+/* Detalle de conversacion: chat + panel de pedido lado a lado cuando hay ancho para los dos,
+   apilados (pedido debajo del chat) cuando no. El corte lo decide flex-wrap contra los
+   flex-basis, no un @media: entre 860px y ~1150px el sidebar de 235px sigue visible y dejaba
+   el chat en ~390px reales, demasiado angosto, sin que ningun breakpoint de ventana se
+   activara. Con wrap el criterio es el ancho que de verdad le queda al contenedor. */
 .conv-detail-layout {
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   align-items: flex-start;
 }
-.conv-detail-layout > div:first-child { flex: 2; }
-.conv-detail-order { flex: 1; min-width: 280px; }
+.conv-detail-layout > div:first-child {
+  flex: 2 1 420px;
+  min-width: 0;
+}
+.conv-detail-order { flex: 1 1 280px; min-width: 0; }
 
+/* Apilado, el hilo compite con el panel de pedido: menos alto para que el operador alcance a
+   ver el pedido sin scrollear media pantalla. */
 @media (max-width: 860px) {
-  .conv-detail-layout {
-    flex-direction: column;
-  }
-  .conv-detail-layout > div:first-child { flex: none; width: 100%; }
-  .conv-detail-order { min-width: 0; width: 100%; }
-  /* Apilado, el hilo compite con el panel de pedido: se le da menos alto para que el operador
-     alcance a ver el pedido sin scrollear media pantalla. */
   .chat-thread { height: clamp(280px, 60vh, 520px); }
 }
 

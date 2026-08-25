@@ -39,15 +39,15 @@ export default async function ConversationDetailPage({ params }: { params: Promi
             <div className={`wa-avatar${conversation.isHandoff ? " wa-avatar-handoff" : ""}`}>
               {initialsOf(conversation.customerName)}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="chat-header-info">
               <div className="chat-header-name">{conversation.customerName ?? "Cliente"}</div>
               <div className="chat-header-phone">{conversation.phone}</div>
-              <div className="muted" style={{ marginTop: 4 }}>
+              <div className="chat-header-status">
                 Estado: {conversation.status}
                 {conversation.assignedAdminUsername ? ` · Asignada a ${conversation.assignedAdminUsername}` : ""}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <div className="chat-header-actions">
               {waitingHuman ? <TakeConversationButton conversationId={id} /> : null}
               {humanActive ? <ResolveHandoffButton conversationId={id} /> : null}
               {!conversation.isHandoff ? <EscalateButton conversationId={id} /> : null}
