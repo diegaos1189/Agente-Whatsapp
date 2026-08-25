@@ -15,16 +15,18 @@ export function ProductsManager({ categories, allProducts }: { categories: Categ
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" className={tab === "ALL" ? "cta" : "secondary"} onClick={() => setTab("ALL")}>
-            Todos
-          </button>
-          {categories.map((c) => (
-            <button type="button" key={c.id} className={tab === c.id ? "cta" : "secondary"} onClick={() => setTab(c.id)}>
-              {c.name}
+        {categories.length > 1 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className={tab === "ALL" ? "cta" : "secondary"} onClick={() => setTab("ALL")}>
+              Todos
             </button>
-          ))}
-        </div>
+            {categories.map((c) => (
+              <button type="button" key={c.id} className={tab === c.id ? "cta" : "secondary"} onClick={() => setTab(c.id)}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
         <button type="button" className="cta" onClick={() => setModal({ mode: "create" })} disabled={categories.length === 0}>
           + Nuevo producto
         </button>

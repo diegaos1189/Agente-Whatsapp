@@ -1,8 +1,6 @@
 import { apiServerFetch } from "@/lib/apiServer";
 import type { CategoryDTO } from "@pollos/shared";
-import { AddCategoryForm } from "./AddCategoryForm";
-import { MenuOrderPanel } from "./MenuOrderPanel";
-import { ProductsManager } from "./ProductsManager";
+import { ProductsTabs } from "./ProductsTabs";
 
 export default async function ProductsPage() {
   const categories = await apiServerFetch<CategoryDTO[]>("/api/products");
@@ -15,16 +13,7 @@ export default async function ProductsPage() {
         <p className="muted" style={{ marginTop: 4 }}>Catálogo que usa el agente para tomar pedidos.</p>
       </div>
 
-      <div style={{ display: "flex", gap: 16, marginBottom: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 260px", maxWidth: 320 }}>
-          <AddCategoryForm categories={categories} />
-        </div>
-        <div style={{ flex: "1 1 300px", maxWidth: 360 }}>
-          <MenuOrderPanel categories={categories} />
-        </div>
-      </div>
-
-      <ProductsManager categories={categories} allProducts={allProducts} />
+      <ProductsTabs categories={categories} allProducts={allProducts} />
     </div>
   );
 }
