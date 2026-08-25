@@ -22,3 +22,10 @@ C:/
 # Archivos temporales que pnpm crea para probar soporte de hardlinks en el filesystem
 # (aparecen como _tmp_<pid>_<hash> de 0 bytes, sobre todo en unidades exFAT).
 _tmp_*
+
+# Skills de agente instaladas con `npx skills add` (jakubkrehel/skills): son herramientas
+# locales de quien programa, no parte del producto. Los symlinks de .claude/skills apuntan a
+# rutas absolutas de esta maquina, asi que ni siquiera funcionarian en otro clon.
+.agents/
+.claude/skills/
+skills-lock.json
