@@ -590,7 +590,7 @@ describe("menu numerado por categoria/producto", () => {
     expect(conv.context.pendingMenu).toBeNull();
   });
 
-  it("un numero fuera de rango no rompe la conversacion y cae al flujo normal", async () => {
+  it("un numero fuera de rango insiste con el numero, sin romper ni caer a la IA", async () => {
     const { contact } = seedActiveConversation({
       pendingMenu: "CATEGORIES",
       pendingCategoryIds: ["cat-pollo", "cat-bebidas"],
@@ -598,20 +598,39 @@ describe("menu numerado por categoria/producto", () => {
     await sendMessage(contact.phone, "99", "wamid-1");
 
     expect(state.sentTexts).toHaveLength(1);
+    expect(state.sentTexts[0]!.body).toContain("Por favor responde solo con el número");
     const conv = state.conversations.find((c) => c.contactId === contact.id)!;
-    expect(conv.context.pendingMenu).toBeNull();
+    // El menu numerado sigue activo — la misma lista de categorias sirve para reintentar.
+    expect(conv.context.pendingMenu).toBe("CATEGORIES");
+    expect(conv.context.pendingCategoryIds).toEqual(["cat-pollo", "cat-bebidas"]);
   });
 
-  it("un mensaje con numero mezclado con texto no se interpreta como seleccion de lista", async () => {
+  it("un mensaje con numero mezclado con texto no se interpreta como seleccion de lista e insiste con el numero", async () => {
     const { contact } = seedActiveConversation({
       pendingMenu: "PRODUCTS",
       pendingProductIds: ["prod-entero", "prod-medio"],
     });
     await sendMessage(contact.phone, "quiero 2 pollos enteros", "wamid-1");
 
-    const conv = state.conversations.find((c) => c.contactId === contact.id)!;
     // No debe haber tomado "2" como si fuera el producto 2 de la lista numerada — al no
-    // coincidir con el patron estricto de numero limpio, cae al flujo normal de IA.
+    // coincidir con el patron estricto de numero limpio, se le pide de nuevo el numero en
+    // vez de dejar que la IA adivine texto libre.
+    expect(state.sentTexts).toHaveLength(1);
+    expect(state.sentTexts[0]!.body).toContain("Por favor responde solo con el número");
+    const conv = state.conversations.find((c) => c.contactId === contact.id)!;
+    expect(conv.context.pendingMenu).toBe("PRODUCTS");
+  });
+
+  it("'cancelar' saca al cliente del menu numerado y cae al flujo normal", async () => {
+    const { contact } = seedActiveConversation({
+      pendingMenu: "PRODUCTS",
+      pendingProductIds: ["prod-entero", "prod-medio"],
+    });
+    await sendMessage(contact.phone, "cancelar", "wamid-1");
+
+    const conv = state.conversations.find((c) => c.contactId === contact.id)!;
+    // "cancelar" no es un numero, pero es una señal explicita de salida — no debe atrapar
+    // al cliente insistiendo con el numero, se limpia el menu numerado y sigue el flujo normal.
     expect(conv.context.pendingMenu).toBeNull();
   });
 

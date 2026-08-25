@@ -2388,8 +2388,21 @@ async function handleTextMessage(
   // pasos): le mostramos los productos numerados de esa categoria y cortamos aqui, sin
   // pasar por clasificacion de IA (numero limpio = seleccion de lista, no texto libre).
   if (!inOrderFlowAlready && context.pendingMenu === "CATEGORIES") {
+    const optionIds = context.pendingCategoryIds ?? [];
     const chosenIndex = parseMenuSelectionIndex(normalizedText);
-    const categoryId = chosenIndex !== null ? (context.pendingCategoryIds ?? [])[chosenIndex - 1] : undefined;
+    const categoryId = chosenIndex !== null ? optionIds[chosenIndex - 1] : undefined;
+    if (!categoryId && !looksLikeMenuFlowExit(normalizedText)) {
+      // No fue un numero limpio y valido, ni el cliente quiere salir del menu: insistimos
+      // con el numero en vez de dejar que la IA adivine texto libre — el pendingMenu se
+      // mantiene igual, la misma lista sigue siendo valida para el proximo intento.
+      await sendAndLog(
+        conversationId,
+        phone,
+        `Por favor responde solo con el número de la opción (1 al ${optionIds.length}), tal como aparece en la lista.`,
+        receivedAt,
+      );
+      return;
+    }
     if (categoryId) {
       // Si la categoria elegida tiene subcategorias, las mostramos numeradas (mismo paso,
       // un nivel mas profundo) en vez de saltar directo a productos — asi soporta cualquier
@@ -2430,8 +2443,18 @@ async function handleTextMessage(
   // (mas abajo) lo procese igual que cualquier pedido por texto.
   let forcedProductName: string | null = null;
   if (!inOrderFlowAlready && context.pendingMenu === "PRODUCTS") {
+    const optionIds = context.pendingProductIds ?? [];
     const chosenIndex = parseMenuSelectionIndex(normalizedText);
-    const productId = chosenIndex !== null ? (context.pendingProductIds ?? [])[chosenIndex - 1] : undefined;
+    const productId = chosenIndex !== null ? optionIds[chosenIndex - 1] : undefined;
+    if (!productId && !looksLikeMenuFlowExit(normalizedText)) {
+      await sendAndLog(
+        conversationId,
+        phone,
+        `Por favor responde solo con el número del producto (1 al ${optionIds.length}), tal como aparece en la lista.`,
+        receivedAt,
+      );
+      return;
+    }
     if (productId) {
       const categories = await listCatalog();
       const product = categories.flatMap((cat) => cat.products).find((p) => p.id === productId);
@@ -2956,6 +2979,19 @@ function parseMenuSelectionIndex(text: string): number | null {
     return Number(withoutFiller);
   }
   return null;
+}
+
+/**
+ * Frases con las que un cliente intenta salir del menu numerado en vez de responder con un
+ * numero (cancelar, pedir ayuda, arrancar de nuevo). Se revisan antes de insistir con "solo
+ * responde con el numero" para no atrapar a alguien que en realidad quiere otra cosa —
+ * escalamiento a humano ya se maneja antes en messageContainsHandoffKeyword, esto cubre lo
+ * demas (cancelar, salir, empezar de nuevo).
+ */
+function looksLikeMenuFlowExit(text: string): boolean {
+  return /\b(cancelar|cancela|salir|olvidalo|olvídalo|otra cosa|nada mas|nada más|de nuevo|empezar|reiniciar)\b/i.test(
+    text,
+  );
 }
 
 /** Una categoria es visible si tiene algun producto mostrable, o alguna subcategoria visible (recursivo). */
