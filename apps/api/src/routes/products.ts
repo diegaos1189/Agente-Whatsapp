@@ -14,6 +14,7 @@ import { invalidateBusinessSettingsCache } from "../modules/business/businessHou
 const comboItemSchema = z.object({ productId: z.string(), quantity: z.number().int().positive() });
 
 const productUpdateSchema = z.object({
+  categoryId: z.string().optional(),
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   price: z.number().int().positive().optional(),
@@ -200,6 +201,10 @@ export async function productRoutes(app: FastifyInstance) {
 
     const product = await prisma.product.findUnique({ where: { id } });
     if (!product) return reply.status(404).send({ error: "Producto no encontrado" });
+    if (body.categoryId) {
+      const category = await prisma.category.findUnique({ where: { id: body.categoryId } });
+      if (!category) return reply.status(400).send({ error: "La categoria indicada no existe" });
+    }
 
     const updated = await prisma.product.update({ where: { id }, data: body });
     invalidateCatalogCache();

@@ -133,6 +133,7 @@ export function ProductModal({
     setError(null);
     try {
       const payload = {
+        categoryId,
         name,
         price: Number(price),
         description: description.trim() || null,
@@ -145,7 +146,7 @@ export function ProductModal({
       };
 
       if (mode === "create") {
-        await apiClientFetch("/products", { method: "POST", body: JSON.stringify({ categoryId, ...payload }) });
+        await apiClientFetch("/products", { method: "POST", body: JSON.stringify(payload) });
       } else if (product) {
         await apiClientFetch(`/products/${product.id}`, { method: "PATCH", body: JSON.stringify(payload) });
       }
@@ -215,17 +216,13 @@ export function ProductModal({
             <div style={{ display: "flex", gap: 12 }}>
               <label style={{ flex: 1 }}>
                 Categoría
-                {mode === "create" ? (
-                  <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input value={selectedCategoryName || (product?.categoryName ?? "")} disabled />
-                )}
+                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label style={{ flex: 1 }}>
                 Estado
