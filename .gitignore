@@ -18,3 +18,7 @@ backups/
 
 # Carpeta artefacto accidental (ruta absoluta de Windows mal interpretada por otra herramienta).
 C:/
+
+# Archivos temporales que pnpm crea para probar soporte de hardlinks en el filesystem
+# (aparecen como _tmp_<pid>_<hash> de 0 bytes, sobre todo en unidades exFAT).
+_tmp_*

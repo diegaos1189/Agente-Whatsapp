@@ -48,6 +48,13 @@ Guia rapida:
 
 Los clientes colombianos (incluye jerga paisa/Antioquia y otras regiones) escriben muy coloquial, con vocativos ("ome", "parce", "parcero", "mi rey", "jefe", "patron", "vea", "pues", "de una") que no cambian el significado, y con formas indirectas de pedir ("regaleme", "hagame el favor de", "me manda", "me despacha") que SIEMPRE cuentan como ORDER_PRODUCT igual que "quiero". "otro", "uno mas", "el mismo", "repitamelo" tambien son ORDER_PRODUCT (repetir/aumentar lo ya pedido). Preguntas indirectas de precio ("cuanto vale", "a como esta", "que vale") son ASK_PRICE. Tambien entiende contracciones y localismos como "pa", "pal", "pa la casa", "quiteme", "echeme", diminutivos ("papitas", "arepita", "combito"), y variantes foneticas como "barbiquiu". Nunca clasifiques como UNKNOWN solo por errores ortograficos, abreviaturas o jerga regional: interpreta la intencion real detras de la forma coloquial de escribir. Los audios transcritos llegan como una sola frase larga sin puntuacion mezclando varias cosas; clasifica segun la intencion principal del mensaje completo. Nunca respondas caricaturizando el habla paisa: entiende el regionalismo, pero clasifica con criterio semantico.
 
+Pregunta pendiente del bot: si el input trae una linea "El bot esta esperando respuesta a: ...", el cliente casi siempre esta CONTESTANDO esa pregunta. Cuando su mensaje sea corto o ambiguo, interpretalo como respuesta a ESA pregunta antes que como cualquier otra cosa:
+- Un "no", "no gracias", "asi esta bien", "nada mas", "ninguno", "mejor no", "ya no" contestando una pregunta OPCIONAL (acompanantes, bebidas, algo mas) significa que declina ESE item, no que cancela el pedido: eso es PROVIDE_INFO, NUNCA CANCEL.
+- Un nombre de producto, una cantidad, una direccion, un barrio o un metodo de pago sueltos, contestando la pregunta pendiente, son PROVIDE_INFO.
+- Usa CANCEL solo cuando el cliente pida cancelar o anular el pedido de forma explicita ("cancelar", "cancele todo", "anule el pedido"), nunca por un simple "no" a un slot pendiente.
+- EXCEPCION: si la pregunta pendiente es la confirmacion final del pedido (su texto contiene "confirma su pedido"), el dato que el bot espera ES la confirmacion, asi que una aceptacion clara se clasifica CONFIRM, NUNCA PROVIDE_INFO. Cuentan como aceptacion "si", "si senor", "sii", "claro", "confirmo", "confirmado", "dale", "listo", "correcto", "eso es", "asi esta bien", "asi mero", "hagale", "hagale pues", "de una", "mande eso", y cualquier mensaje que empiece aceptando y siga con un comentario que no cambia el pedido ("si, confirmo el pedido asi", "si asi esta bien el pedido", "listo entonces mandelo"). Esto manda incluso si la frase aparece arriba entre las que declinan un item opcional (ej: "asi esta bien"): contestando la confirmacion final significa que ACEPTA el pedido.
+- En esa misma pregunta de confirmacion, "cancelar"/"anular" siguen siendo CANCEL, y un mensaje que pide CAMBIAR algo del pedido ("cambieme la gaseosa", "quitele la ensalada", "mejor para recoger") no es CONFIRM: va a ORDER_PRODUCT o PROVIDE_INFO segun corresponda.
+
 Responde SOLO el JSON pedido. confidence entre 0 y 1 segun que tan seguro estas.`;
 }
 
@@ -55,8 +62,15 @@ export async function classifyIntent(params: {
   message: string;
   recentHistory: string;
   businessName: string;
+  /**
+   * Pregunta del flujo de pedido que quedo pendiente en el turno anterior (ver
+   * getPendingOrderQuestion en orderFlow). Sin este dato, un "No" contestando "¿desea algun
+   * acompanante?" se clasificaba como CANCEL y borraba el pedido completo.
+   */
+  pendingQuestion?: string | null;
 }): Promise<IntentResult> {
-  const input = `Historial reciente (mas nuevo al final):\n${params.recentHistory}\n\nUltimo mensaje del cliente: "${params.message}"`;
+  const pendingLine = params.pendingQuestion ? `El bot esta esperando respuesta a: ${params.pendingQuestion}\n\n` : "";
+  const input = `${pendingLine}Historial reciente (mas nuevo al final):\n${params.recentHistory}\n\nUltimo mensaje del cliente: "${params.message}"`;
 
   const raw = await callAiJson({
     instructions: buildInstructions(params.businessName),

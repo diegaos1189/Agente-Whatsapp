@@ -6,6 +6,7 @@ import { ReplyBox } from "./ReplyBox";
 import { OrderPanel } from "./OrderPanel";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { ChatImage } from "./ChatImage";
+import { ChatThread } from "./ChatThread";
 import { TakeConversationButton } from "./TakeConversationButton";
 import { ArchiveButton } from "../ArchiveButton";
 
@@ -53,7 +54,7 @@ export default async function ConversationDetailPage({ params }: { params: Promi
               <ArchiveButton conversationId={id} />
             </div>
           </div>
-          <div className="chat-thread">
+          <ChatThread lastMessageId={messages[messages.length - 1]?.id ?? null}>
             {messages.map((m) => (
               <div key={m.id} className={`chat-bubble ${m.direction === "INBOUND" ? "inbound" : "outbound"}`}>
                 {m.direction === "OUTBOUND" && m.senderType && (
@@ -70,7 +71,7 @@ export default async function ConversationDetailPage({ params }: { params: Promi
               </div>
             ))}
             {messages.length === 0 && <p className="muted">Aun no hay mensajes en esta conversacion.</p>}
-          </div>
+          </ChatThread>
           <ReplyBox
             conversationId={id}
             disabled={!humanActive}
