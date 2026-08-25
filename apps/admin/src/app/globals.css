@@ -516,19 +516,29 @@ a.link:hover { text-decoration: underline; }
      encabezado y barra de escritura queden siempre visibles (ver ChatThread.tsx, que ademas
      abre la conversacion mostrando el ultimo mensaje). */
   height: clamp(300px, calc(100vh - 340px), 680px);
-  overflow-y: auto;
+  /* `scroll` y no `auto`: la barra queda siempre a la vista (con su canal marcado), asi el
+     operador ve de entrada que el hilo se desplaza aunque la conversacion sea corta, y el
+     ancho del area no salta cuando llegan mensajes nuevos y aparece el scroll. */
+  overflow-y: scroll;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.3) rgba(0, 0, 0, 0.07);
+  scrollbar-gutter: stable;
 }
 
-.chat-thread::-webkit-scrollbar { width: 8px; }
-.chat-thread::-webkit-scrollbar-track { background: transparent; }
-.chat-thread::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.22);
+.chat-thread::-webkit-scrollbar { width: 10px; }
+.chat-thread::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.07);
   border-radius: 999px;
+  margin: 6px 0;
 }
-.chat-thread::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.35); }
+.chat-thread::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.chat-thread::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.45); background-clip: padding-box; }
 
 .chat-bubble {
   padding: 6px 9px 8px;
