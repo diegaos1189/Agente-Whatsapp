@@ -4,19 +4,19 @@ import { useEffect, useState } from "react";
 import { RestaurantModal, type RestaurantDraft } from "./RestaurantModal";
 import { RestaurantRow } from "./RestaurantRow";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { SEED_RESTAURANTS, todayIso, type PlatformRestaurant } from "./types";
+import { LEGACY_SEED_IDS, todayIso, type PlatformRestaurant } from "./types";
 
 const STORAGE_KEY = "platform-restaurants-mock";
 
 type ModalState = { mode: "create" } | { mode: "edit"; restaurant: PlatformRestaurant } | null;
 
 export function RestaurantsManager() {
-  const [restaurants, setRestaurants] = useState<PlatformRestaurant[]>(SEED_RESTAURANTS);
+  const [restaurants, setRestaurants] = useState<PlatformRestaurant[]>([]);
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState<ModalState>(null);
   const [deactivating, setDeactivating] = useState<PlatformRestaurant | null>(null);
   // Hasta que no se leyo localStorage no se escribe, si no el primer render pisaria lo guardado
-  // con la semilla.
+  // con la lista vacia.
   const [loaded, setLoaded] = useState(false);
 
   // Persistencia solo para poder mostrar la pantalla sin que se reinicie en cada refresh.
@@ -24,9 +24,13 @@ export function RestaurantsManager() {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) setRestaurants(JSON.parse(stored) as PlatformRestaurant[]);
+      if (stored) {
+        const parsed = JSON.parse(stored) as PlatformRestaurant[];
+        // Navegadores que visitaron la pagina cuando existian los ejemplos los tienen guardados.
+        setRestaurants(parsed.filter((r) => !LEGACY_SEED_IDS.includes(r.id)));
+      }
     } catch {
-      // localStorage bloqueado o JSON corrupto: se queda con la semilla
+      // localStorage bloqueado o JSON corrupto: se queda con la lista vacia
     }
     setLoaded(true);
   }, []);
