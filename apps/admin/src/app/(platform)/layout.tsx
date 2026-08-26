@@ -17,7 +17,8 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
     <div className="layout">
       <SidebarShell
         title="Plataforma"
-        logoUrl="/pedix-logo.svg?v=2"
+        logoUrl="/pedix-logo.svg?v=3"
+        logoVariant="wordmark"
         footer={<div className="muted" style={{ fontSize: 12, padding: "0 10px" }}>Pedix</div>}
       >
         <nav>

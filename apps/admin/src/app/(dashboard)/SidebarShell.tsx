@@ -6,16 +6,20 @@ import { usePathname } from "next/navigation";
 export function SidebarShell({
   title,
   logoUrl,
+  logoVariant = "square",
   children,
   footer,
 }: {
   title: string;
   logoUrl?: string | null;
+  /** "square": logo del negocio grande y centrado. "wordmark": marca pequeña alineada a la izquierda. */
+  logoVariant?: "square" | "wordmark";
   children: ReactNode;
   footer: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const isWordmark = logoVariant === "wordmark";
 
   // Cierra el menu automaticamente al navegar a otra pagina — sin esto se quedaba abierto
   // tapando el contenido despues de tocar un link en movil.
@@ -29,7 +33,7 @@ export function SidebarShell({
         <button type="button" className="mobile-menu-btn" onClick={() => setOpen(true)} aria-label="Abrir menu">
           ☰
         </button>
-        {logoUrl && <img src={logoUrl} alt="" className="mobile-topbar-logo" />}
+        {logoUrl && <img src={logoUrl} alt="" className={isWordmark ? "mobile-topbar-logo-wordmark" : "mobile-topbar-logo"} />}
         <span className="mobile-topbar-title">{title}</span>
       </div>
       {open && <div className="sidebar-overlay" onClick={() => setOpen(false)} />}
@@ -39,8 +43,17 @@ export function SidebarShell({
             ✕
           </button>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 28, minWidth: 0 }}>
-          {logoUrl && <img src={logoUrl} alt="" className="sidebar-logo" />}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: isWordmark ? "flex-start" : "center",
+            gap: 10,
+            marginBottom: 28,
+            minWidth: 0,
+          }}
+        >
+          {logoUrl && <img src={logoUrl} alt="" className={isWordmark ? "sidebar-logo-wordmark" : "sidebar-logo"} />}
           <h1
             style={{
               margin: 0,
@@ -48,7 +61,7 @@ export function SidebarShell({
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               maxWidth: "100%",
-              textAlign: "center",
+              textAlign: isWordmark ? "left" : "center",
             }}
           >
             {title}
