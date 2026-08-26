@@ -47,6 +47,10 @@ export function RestaurantRow({
       <td>{formatDate(restaurant.createdAt)}</td>
       <td>
         <div style={{ display: "flex", gap: 6 }}>
+          {/* <a> con look de boton (.wa-list-btn): abre el link publico del restaurante. */}
+          <a className="wa-list-btn" href={`/${restaurant.slug}`} target="_blank" rel="noreferrer">
+            Abrir
+          </a>
           <button type="button" className="secondary" onClick={onEdit}>
             Editar
           </button>
