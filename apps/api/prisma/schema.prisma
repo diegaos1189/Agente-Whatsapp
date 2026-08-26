@@ -593,6 +593,9 @@ model CustomerReactivationCampaign {
 model PlatformRestaurant {
   id         String   @id @default(cuid())
   name       String
+  /// Identificador para el link publico del restaurante (<url-del-panel>/<slug>). Se genera
+  /// del nombre al crearlo y no cambia aunque se renombre, para no romper links compartidos.
+  slug       String   @unique
   city       String
   address    String   @default("")
   ownerPhone String   @default("")

@@ -12,6 +12,9 @@ export function RestaurantRow({
   onToggleStatus: () => void;
 }) {
   const isActive = restaurant.status === "ACTIVE";
+  // Las filas solo se renderizan en el cliente (la lista llega por fetch post-mount), asi que
+  // window esta disponible; el guard es solo por si esto se reusa en un contexto con SSR.
+  const linkHost = typeof window !== "undefined" ? window.location.host : "";
 
   return (
     <tr>
@@ -22,6 +25,11 @@ export function RestaurantRow({
             {restaurant.address}
           </div>
         )}
+      </td>
+      <td>
+        <a href={`/${restaurant.slug}`} target="_blank" rel="noreferrer" style={{ whiteSpace: "nowrap" }}>
+          {linkHost}/{restaurant.slug}
+        </a>
       </td>
       <td>{restaurant.city}</td>
       <td>

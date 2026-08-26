@@ -4,7 +4,8 @@ import { useState } from "react";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CURRENCY_OPTIONS, type PlatformRestaurant, type RestaurantStatus } from "./types";
 
-export type RestaurantDraft = Omit<PlatformRestaurant, "id" | "createdAt">;
+// Sin slug: lo genera la API a partir del nombre y no se edita desde el panel.
+export type RestaurantDraft = Omit<PlatformRestaurant, "id" | "slug" | "createdAt">;
 
 /**
  * Alta rapida / edicion de un restaurante. A proposito solo pide lo minimo para crearlo: el

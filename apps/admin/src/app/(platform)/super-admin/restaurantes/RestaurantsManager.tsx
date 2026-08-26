@@ -184,6 +184,7 @@ export function RestaurantsManager() {
           <thead>
             <tr>
               <th>Nombre</th>
+              <th>Link</th>
               <th>Ciudad</th>
               <th>Contacto del dueño</th>
               <th>Moneda</th>
@@ -203,7 +204,7 @@ export function RestaurantsManager() {
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={7} className="muted">
+                <td colSpan={8} className="muted">
                   {loading
                     ? "Cargando restaurantes…"
                     : term

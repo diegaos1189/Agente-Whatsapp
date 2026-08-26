@@ -5,6 +5,8 @@
 export interface PlatformRestaurant {
   id: string;
   name: string;
+  /** Identificador del link publico (<url-del-panel>/<slug>). Lo genera la API desde el nombre. */
+  slug: string;
   city: string;
   address: string;
   ownerPhone: string;
