@@ -56,7 +56,7 @@ export const ROUTE_PERMISSIONS: Array<{ prefix: string; permission: PermissionKe
 ];
 
 /** Rutas que solo puede ver/editar el rol ADMIN, sin excepcion. */
-export const ADMIN_ONLY_PREFIXES = ["/settings", "/users"];
+export const ADMIN_ONLY_PREFIXES = ["/settings", "/users", "/super-admin"];
 
 export function firstAllowedPath(payload: SessionPayload): string {
   if (payload.role === ADMIN_ROLE) return "/metrics";

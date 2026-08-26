@@ -6,7 +6,7 @@ export default function RestaurantesPage() {
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0 }}>Restaurantes</h2>
         <p className="muted" style={{ marginTop: 4 }}>
-          Negocios que usan la plataforma. Todavía no hay backend: los datos se guardan en este navegador.
+          Negocios que usan la plataforma, guardados en la base de datos.
         </p>
       </div>
       <RestaurantsManager />

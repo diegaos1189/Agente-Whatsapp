@@ -1,6 +1,6 @@
 /**
- * Modelo mock del area de plataforma. No existe en Prisma todavia (BusinessSettings sigue
- * siendo una sola fila): esto es solo para las pantallas, hasta que haya backend multi-tenant.
+ * Restaurante cliente de la plataforma, tal como lo devuelve la API
+ * (GET /api/platform/restaurants — tabla platform_restaurants).
  */
 export interface PlatformRestaurant {
   id: string;
@@ -11,7 +11,7 @@ export interface PlatformRestaurant {
   ownerEmail: string;
   currency: string;
   status: RestaurantStatus;
-  /** ISO date (YYYY-MM-DD) — se guarda como texto para que sobreviva a localStorage. */
+  /** ISO datetime que entrega la API (ej: 2026-08-26T14:03:00.000Z). */
   createdAt: string;
 }
 
@@ -28,19 +28,13 @@ export const CURRENCY_OPTIONS = [
   { code: "EUR", label: "EUR — Euro" },
 ] as const;
 
-/** Ids de los restaurantes de ejemplo que existieron antes: se filtran al leer localStorage. */
+/** Ids de los restaurantes de ejemplo que existieron antes: se excluyen al importar localStorage. */
 export const LEGACY_SEED_IDS = ["r-001", "r-002", "r-003", "r-004"];
 
 /** dd/mm/aaaa a mano: toLocaleDateString cambia entre servidor y navegador y rompe la hidratacion. */
 export function formatDate(iso: string): string {
-  const [year, month, day] = iso.split("-");
+  const datePart = iso.split("T")[0] ?? iso;
+  const [year, month, day] = datePart.split("-");
   if (!year || !month || !day) return iso;
   return `${day}/${month}/${year}`;
-}
-
-export function todayIso(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
 }
