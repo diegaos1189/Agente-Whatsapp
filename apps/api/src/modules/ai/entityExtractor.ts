@@ -3,6 +3,7 @@ import { DeliveryType, PaymentMethod } from "@pollos/shared";
 import { callAiJson } from "./aiClient.js";
 import type { NeutralSchema } from "./schema.js";
 import { logger } from "../../utils/logger.js";
+import { repairTextEncodingArtifacts } from "../../utils/text.js";
 
 const entitySchema = z.object({
   productType: z.string().nullable(),
@@ -121,11 +122,15 @@ export async function extractEntities(params: {
    */
   pendingQuestion?: string | null;
 }): Promise<ExtractedEntities> {
-  const pendingLine = params.pendingQuestion ? `El bot esta esperando respuesta a: ${params.pendingQuestion}\n\n` : "";
-  const input = `${pendingLine}Historial reciente:\n${params.recentHistory}\n\nUltimo mensaje del cliente: "${params.message}"`;
+  const safeBusinessName = repairTextEncodingArtifacts(params.businessName);
+  const safeMessage = repairTextEncodingArtifacts(params.message);
+  const safeRecentHistory = repairTextEncodingArtifacts(params.recentHistory);
+  const safePendingQuestion = params.pendingQuestion ? repairTextEncodingArtifacts(params.pendingQuestion) : null;
+  const pendingLine = safePendingQuestion ? `El bot esta esperando respuesta a: ${safePendingQuestion}\n\n` : "";
+  const input = `${pendingLine}Historial reciente:\n${safeRecentHistory}\n\nUltimo mensaje del cliente: "${safeMessage}"`;
 
   const raw = await callAiJson({
-    instructions: buildInstructions(params.businessName),
+    instructions: buildInstructions(safeBusinessName),
     input,
     schemaName: "entity_extraction",
     schema: SCHEMA,

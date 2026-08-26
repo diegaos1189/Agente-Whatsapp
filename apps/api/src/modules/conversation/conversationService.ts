@@ -1477,30 +1477,9 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
       return;
     }
 
-    const lastOrder = await getLatestOrderForContact(contact.id);
-
     let message: string;
     let pendingMenu: PendingMenu = "WELCOME";
-    if (lastOrder && contact.name) {
-      // El saludo a un cliente recurrente usa el mismo mensaje de bienvenida configurado
-      // por el negocio (asi se presenta el bot siempre, sin importar si es cliente nuevo o
-      // no), con una linea aparte, deterministica (sin IA, sin riesgo de guardrail),
-      // mencionando su ultimo pedido.
-      const statusLabel = ORDER_STATUS_LABELS_ES[lastOrder.status] ?? lastOrder.status.toLowerCase();
-      const lastOrderLine = `Tu ultimo pedido (${lastOrder.code}) quedo: ${statusLabel}.`;
-      if (settings.welcomeMessage.trim()) {
-        // El mensaje configurado ya trae su propio menu numerado (el negocio lo escribe
-        // asi) — no le pegamos OTRA lista encima, solo la mencion del pedido anterior.
-        // Mismo mapa de atajos numericos que un cliente nuevo (WELCOME), ya que los
-        // numeros que ve el cliente son los del texto configurado, no los de RETURNING.
-        message = `${settings.welcomeMessage}\n\n${lastOrderLine}`;
-        pendingMenu = "WELCOME";
-      } else {
-        const baseGreeting = `¡Hola ${contact.name}! Bienvenido de nuevo a ${settings.restaurantName}.`;
-        message = `${baseGreeting}\n\n${lastOrderLine}\n\n1. Ver el estado de mi pedido\n2. Hacer un nuevo pedido\n3. Ver el menu\n4. Otra cosa (escribeme libremente)`;
-        pendingMenu = "RETURNING";
-      }
-    } else if (settings.welcomeMessage.trim()) {
+    if (settings.welcomeMessage.trim()) {
       // Si el negocio escribio su propio mensaje de bienvenida, se usa TAL CUAL (control
       // total) — antes se agregaba despues de un saludo fijo, y si el texto configurado YA
       // era un saludo completo (lo mas comun), terminaba duplicado/incoherente.

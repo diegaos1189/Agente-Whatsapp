@@ -1,6 +1,7 @@
 import { callAiText } from "./aiClient.js";
 import { applyGuardrails, extractMoneyLikeNumbers, SAFE_FALLBACK_MESSAGE } from "./guardrails.js";
 import { logger } from "../../utils/logger.js";
+import { repairTextEncodingArtifacts } from "../../utils/text.js";
 
 function buildInstructions(businessName: string, tone: string, allowGreeting: boolean): string {
   const continuityRules = allowGreeting
@@ -52,17 +53,22 @@ export async function generateResponse({
   tone,
   allowGreeting = false,
 }: GenerateResponseParams): Promise<string> {
-  const factsBlock = facts.length > 0 ? facts.map((fact) => `- ${fact}`).join("\n") : "- (sin datos adicionales)";
+  const safeBusinessName = repairTextEncodingArtifacts(businessName);
+  const safeTone = repairTextEncodingArtifacts(tone || DEFAULT_TONE);
+  const safeFacts = facts.map((fact) => repairTextEncodingArtifacts(fact));
+  const safeAskNext = askNext ? repairTextEncodingArtifacts(askNext) : null;
+  const safeExtraInstructions = extraInstructions ? repairTextEncodingArtifacts(extraInstructions) : "";
+  const factsBlock = safeFacts.length > 0 ? safeFacts.map((fact) => `- ${fact}`).join("\n") : "- (sin datos adicionales)";
   const input = [
     `Hechos:\n${factsBlock}`,
-    askNext ? `Pregunta a hacer: ${askNext}` : "Pregunta a hacer: (ninguna, no termines en pregunta)",
-    extraInstructions ? `Instruccion adicional: ${extraInstructions}` : "",
+    safeAskNext ? `Pregunta a hacer: ${safeAskNext}` : "Pregunta a hacer: (ninguna, no termines en pregunta)",
+    safeExtraInstructions ? `Instruccion adicional: ${safeExtraInstructions}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
 
   const generated = await callAiText({
-    instructions: buildInstructions(businessName, tone || DEFAULT_TONE, allowGreeting),
+    instructions: buildInstructions(safeBusinessName, safeTone, allowGreeting),
     input,
     maxOutputTokens: 220,
   });
@@ -72,7 +78,7 @@ export async function generateResponse({
     return SAFE_FALLBACK_MESSAGE;
   }
 
-  const allowedAmounts = extractMoneyLikeNumbers(`${factsBlock}\n${askNext ?? ""}`);
+  const allowedAmounts = extractMoneyLikeNumbers(`${factsBlock}\n${safeAskNext ?? ""}`);
   const { text } = applyGuardrails({ generatedText: generated, allowedAmounts });
   return text;
 }

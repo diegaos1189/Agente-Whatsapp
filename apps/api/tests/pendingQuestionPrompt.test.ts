@@ -77,6 +77,23 @@ describe("contexto de pregunta pendiente en las llamadas de IA", () => {
     expect(call.input.startsWith("Historial reciente")).toBe(true);
   });
 
+  it("repara artefactos de encoding antes de llamar a la IA", async () => {
+    aiClientMocks.callAiJson.mockResolvedValue(JSON.stringify({ intent: Intent.PROVIDE_INFO, confidence: 0.9 }));
+
+    await classifyIntent({
+      message: "Â¿si?",
+      recentHistory: "bot: acompaÃ±antes",
+      businessName: "Pollos El CorralitÃ³",
+      pendingQuestion: "Â¿desea agregar algun acompaÃ±ante?",
+    });
+
+    const call = aiClientMocks.callAiJson.mock.calls[0][0];
+    expect(call.input).toContain('Ultimo mensaje del cliente: "¿si?"');
+    expect(call.input).toContain("bot: acompañantes");
+    expect(call.input).toContain("El bot esta esperando respuesta a: ¿desea agregar algun acompañante?");
+    expect(call.instructions).toContain('WhatsApp de "Pollos El Corralitó"');
+  });
+
   it("la pregunta pendiente que se le pasa a la IA describe el paso real del pedido", () => {
     expect(getPendingOrderQuestion({ ...initialOrderFlowState, step: OrderFlowStep.ASK_SIDES })).toContain("acompanante");
     expect(getPendingOrderQuestion({ ...initialOrderFlowState, step: OrderFlowStep.ASK_DRINKS })).toContain("tomar");
@@ -98,7 +115,7 @@ describe("carve-out de CONFIRM cuando la pregunta pendiente es la confirmacion f
 
   // La excepcion se dispara sobre el texto "confirma su pedido". Si alguien reescribe la
   // pregunta del paso CONFIRMING y deja de contener ese texto, la excepcion deja de aplicar
-  // en silencio y "Si" vuelve a caer en PROVIDE_INFO — por eso se atan las dos puntas aqui.
+  // en silencio y "Si" vuelve a caer en PROVIDE_INFO, por eso se atan las dos puntas aqui.
   it("la pregunta del paso CONFIRMING contiene el texto sobre el que dispara la excepcion", () => {
     expect(confirmingQuestion).toContain("confirma su pedido");
   });
@@ -115,7 +132,6 @@ describe("carve-out de CONFIRM cuando la pregunta pendiente es la confirmacion f
     expect(input).toContain(`El bot esta esperando respuesta a: ${confirmingQuestion}`);
     expect(instructions).toContain("confirma su pedido");
     expect(instructions).toContain("CONFIRM, NUNCA PROVIDE_INFO");
-    // Las aceptaciones que reporto el cliente como fallando deben estar nombradas.
     for (const acceptance of ["si", "confirmo", "correcto", "asi esta bien", "hagale", "de una"]) {
       expect(instructions).toContain(acceptance);
     }
@@ -130,9 +146,7 @@ describe("carve-out de CONFIRM cuando la pregunta pendiente es la confirmacion f
     });
 
     const { instructions } = aiClientMocks.callAiJson.mock.calls[0][0];
-    // Sigue vigente lo del fix anterior: un "no" a un item opcional nunca es CANCEL.
     expect(instructions).toContain("NUNCA CANCEL");
-    // Y en la confirmacion final, cancelar sigue siendo cancelar y un cambio no es CONFIRM.
     expect(instructions).toContain('"cancelar"/"anular" siguen siendo CANCEL');
     expect(instructions).toContain("no es CONFIRM");
   });
