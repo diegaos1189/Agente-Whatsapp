@@ -19,7 +19,6 @@ import {
 import { classifyIntent } from "../ai/intentClassifier.js";
 import { extractEntities, EMPTY_ENTITIES, type ExtractedEntities } from "../ai/entityExtractor.js";
 import { generateResponse } from "../ai/responseGenerator.js";
-import { SAFE_FALLBACK_MESSAGE } from "../ai/guardrails.js";
 import { transcribeAudio, describeImage } from "../ai/aiClient.js";
 import { getWhatsAppClient } from "../whatsapp/whatsappClient.js";
 import type { DownloadedMedia } from "../whatsapp/whatsappClient.js";
@@ -1483,24 +1482,16 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
     let message: string;
     let pendingMenu: PendingMenu = "WELCOME";
     if (lastOrder && contact.name) {
+      // El saludo a un cliente recurrente usa el mismo mensaje de bienvenida configurado
+      // por el negocio (asi se presenta el bot siempre, sin importar si es cliente nuevo o
+      // no), con una linea aparte, deterministica (sin IA, sin riesgo de guardrail),
+      // mencionando su ultimo pedido.
       const statusLabel = ORDER_STATUS_LABELS_ES[lastOrder.status] ?? lastOrder.status.toLowerCase();
-      const greeting = await generateResponse({
-        facts: [
-          `El cliente se llama ${contact.name} y ya nos ha pedido antes.`,
-          `Su ultimo pedido (${lastOrder.code}) quedo en estado: ${statusLabel}.`,
-        ],
-        askNext: null,
-        businessName: settings.restaurantName,
-        tone: settings.assistantTone,
-        allowGreeting: true,
-      });
-      // Si el guardrail reemplazo el saludo por el mensaje de error generico (ej: el modelo
-      // menciono algun numero que se confundio con un monto), no lo pegamos con el menu
-      // numerado — se veria como un error pegado a la respuesta. Se usa un saludo fijo,
-      // siempre seguro, en su lugar.
-      const greetingLine =
-        greeting === SAFE_FALLBACK_MESSAGE ? `¡Hola ${contact.name}! Bienvenido de nuevo a ${settings.restaurantName}.` : greeting;
-      message = `${greetingLine}\n\n1. Ver el estado de mi pedido\n2. Hacer un nuevo pedido\n3. Ver el menu\n4. Otra cosa (escribeme libremente)`;
+      const baseGreeting = settings.welcomeMessage.trim()
+        ? settings.welcomeMessage
+        : `¡Hola ${contact.name}! Bienvenido de nuevo a ${settings.restaurantName}.`;
+      const lastOrderLine = `Tu ultimo pedido (${lastOrder.code}) quedo: ${statusLabel}.`;
+      message = `${baseGreeting}\n\n${lastOrderLine}\n\n1. Ver el estado de mi pedido\n2. Hacer un nuevo pedido\n3. Ver el menu\n4. Otra cosa (escribeme libremente)`;
       pendingMenu = "RETURNING";
     } else if (settings.welcomeMessage.trim()) {
       // Si el negocio escribio su propio mensaje de bienvenida, se usa TAL CUAL (control
