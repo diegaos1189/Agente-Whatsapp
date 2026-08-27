@@ -93,6 +93,7 @@ import {
 } from "./orderStatusService.js";
 import {
   isGenericOrderConfirmation,
+  isPlainAffirmativeReply,
   isRegionalCancellation,
   isRegionalConfirmation,
   normalizeLocalizedText,
@@ -322,7 +323,12 @@ function looksLikeCartTotalRequest(text: string): boolean {
 }
 
 function canApplyRegionalConfirmShortcut(context: ConversationContext): boolean {
-  return context.orderFlow.step === OrderFlowStep.CONFIRMING && Boolean(context.checkout?.summary);
+  // Solo exige estar en CONFIRMING. Antes tambien exigia checkout.summary, pero si el summary
+  // no alcanzaba a guardarse (una validacion de checkout pendiente, ej: falta el barrio), el
+  // atajo nunca se armaba y el cliente quedaba confirmando en bucle sin que su "1"/"si" se
+  // aceptara nunca. Confirmar sin summary es seguro: handleOrderCreation re-valida todo al
+  // crear el pedido y, si falta un dato, se lo pide explicitamente al cliente.
+  return context.orderFlow.step === OrderFlowStep.CONFIRMING;
 }
 
 async function calculateConversationCartPricing(
@@ -3335,6 +3341,7 @@ async function runOrderFlowTurn(params: {
     businessDeliveryFee: settings.deliveryFee,
     currency: settings.currency,
     isCorrectionAttempt: looksLikeCorrection,
+    isPlainAffirmative: isPlainAffirmativeReply(text),
     acceptedPaymentMethods: settings.acceptedPaymentMethods as PaymentMethod[],
     availableDrinks,
     availableSides,

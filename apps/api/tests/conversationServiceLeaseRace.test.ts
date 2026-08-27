@@ -385,6 +385,8 @@ vi.mock("../src/modules/payments/paymentService.js", () => ({
 }));
 
 vi.mock("../src/modules/localization/localeService.js", () => ({
+  isGenericOrderConfirmation: vi.fn(() => false),
+  isPlainAffirmativeReply: vi.fn(() => false),
   isRegionalCancellation: vi.fn(() => false),
   isRegionalConfirmation: vi.fn(() => false),
   normalizeLocalizedText: vi.fn((text: string) => text),

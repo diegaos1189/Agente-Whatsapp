@@ -263,6 +263,42 @@ const GENERIC_CONFIRMATION_BLOCKERS = new Set([
   "duda",
 ]);
 
+// Solo afirmaciones INEQUIVOCAS de "si quiero eso". "listo"/"ok"/"dale" quedan fuera a
+// proposito: contestando una pregunta opcional ("¿desea bebida?") suelen significar
+// "asi esta bien, siga", no "si, quiero una".
+const PLAIN_AFFIRMATIVE_PHRASES = new Set([
+  "si",
+  "sii",
+  "siii",
+  "claro",
+  "claro que si",
+  "obvio",
+  "de una",
+  "si claro",
+  "si senor",
+  "si senora",
+  "si quiero",
+  "si deseo",
+  "si gracias",
+  "si por favor",
+  "por favor",
+  "me gustaria",
+  "si me gustaria",
+]);
+
+/**
+ * "Si" pelado (o variantes cortas tipo "si claro", "si por favor"): el cliente afirma querer
+ * lo que se le acaba de ofrecer, sin nombrar ningun producto. Sirve en los pasos opcionales
+ * (acompanantes/bebidas) para mostrarle las opciones en vez de saltarse el paso.
+ */
+export function isPlainAffirmativeReply(text: string, profile = getLocaleProfile()): boolean {
+  const normalized = normalizeForPhraseMatch(text, profile)
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return PLAIN_AFFIRMATIVE_PHRASES.has(normalized);
+}
+
 /**
  * Confirmacion generica en espanol para el paso de confirmar el pedido: acepta desde un "si"
  * o "confirmado" hasta frases completas tipo "SI es correcto mi pedido y lo confirmo asi".
