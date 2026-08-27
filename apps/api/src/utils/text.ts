@@ -13,6 +13,23 @@ export function normalizeText(text: string): string {
     .trim();
 }
 
+/**
+ * Empareja el formato de las lineas numeradas de un menu escrito a mano (" 1. Ver el menu",
+ * "2.Promociones", "3.  Estado") a "N. Texto". El negocio escribe su mensaje de bienvenida
+ * en el panel y los espacios inconsistentes se ven mal en WhatsApp. El lookahead (?!\d)
+ * evita tocar numeros con separador de miles tipo "12.000".
+ */
+export function normalizeNumberedMenuLines(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const match = /^\s*(\d+)\s*[.)](?!\d)\s*(\S.*)$/.exec(line);
+      if (!match) return line;
+      return `${match[1]}. ${match[2]!.trim()}`;
+    })
+    .join("\n");
+}
+
 const HANDOFF_KEYWORDS = ["asesor", "humano", "persona", "queja", "reclamo", "operador", "agente"];
 
 export function messageContainsHandoffKeyword(text: string): boolean {

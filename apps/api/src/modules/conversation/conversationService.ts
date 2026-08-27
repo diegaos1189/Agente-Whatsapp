@@ -1,7 +1,7 @@
 import { Prisma, type Conversation } from "@prisma/client";
 import { prisma } from "../../db/prisma.js";
 import { logger } from "../../utils/logger.js";
-import { messageContainsHandoffKeyword, repairTextEncodingArtifacts } from "../../utils/text.js";
+import { messageContainsHandoffKeyword, normalizeNumberedMenuLines, normalizeText, repairTextEncodingArtifacts } from "../../utils/text.js";
 import { formatCurrency } from "../../utils/currency.js";
 import {
   ConversationStatus,
@@ -147,6 +147,44 @@ export interface InboundMessageInput {
 
 /** Que menu numerado se le acaba de mandar al cliente (para interpretar su proxima respuesta "1"/"2"/"3"). */
 type PendingMenu = "WELCOME" | "RETURNING" | "CATEGORIES" | "PRODUCTS" | null;
+
+/** Mapa numero->intent del menu de bienvenida POR DEFECTO (el que arma el bot cuando el negocio no escribio uno propio). */
+const DEFAULT_WELCOME_SHORTCUT: Record<string, string> = {
+  "1": Intent.VIEW_MENU,
+  "2": Intent.ORDER_PRODUCT,
+  "3": Intent.ASK_PROMOTIONS,
+  "4": Intent.ORDER_STATUS,
+};
+
+/** Reconoce a que intent apunta el texto de una opcion del menu de bienvenida ("Ver el menu", "Promociones"...). */
+function menuLabelToIntent(label: string): string | null {
+  const normalized = normalizeText(label);
+  // "estado" va primero: "Estado de un pedido" tambien contiene "pedido".
+  if (normalized.includes("estado")) return Intent.ORDER_STATUS;
+  if (normalized.includes("promo")) return Intent.ASK_PROMOTIONS;
+  if (normalized.includes("menu") || normalized.includes("carta")) return Intent.VIEW_MENU;
+  if (normalized.includes("pedido") || normalized.includes("pedir") || normalized.includes("ordenar")) return Intent.ORDER_PRODUCT;
+  return null;
+}
+
+/**
+ * Si el negocio escribio su propio mensaje de bienvenida con opciones numeradas, el mapa
+ * numero->intent se deriva de ESE texto: sus numeros pueden listar otras opciones o en otro
+ * orden que el menu por defecto (ej: "2. Promociones" no puede caer en ORDER_PRODUCT solo
+ * porque el default tiene "2. Hacer un pedido"). Las lineas cuyo texto no se reconoce quedan
+ * sin atajo (esa respuesta cae a clasificacion normal por IA). Devuelve null si el mensaje
+ * no tiene ninguna linea numerada reconocible: en ese caso aplica el mapa por defecto.
+ */
+export function buildWelcomeShortcutFromMessage(welcomeMessage: string): Record<string, string> | null {
+  const map: Record<string, string> = {};
+  for (const line of welcomeMessage.split("\n")) {
+    const match = /^\s*(\d+)\s*[.)](?!\d)\s*(\S.*)$/.exec(line);
+    if (!match) continue;
+    const intent = menuLabelToIntent(match[2]!);
+    if (intent) map[match[1]!] = intent;
+  }
+  return Object.keys(map).length > 0 ? map : null;
+}
 
 interface PendingRepeatReplacement {
   sourceOrderId: string;
@@ -1480,10 +1518,12 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
     let message: string;
     let pendingMenu: PendingMenu = "WELCOME";
     if (settings.welcomeMessage.trim()) {
-      // Si el negocio escribio su propio mensaje de bienvenida, se usa TAL CUAL (control
-      // total) — antes se agregaba despues de un saludo fijo, y si el texto configurado YA
-      // era un saludo completo (lo mas comun), terminaba duplicado/incoherente.
-      message = settings.welcomeMessage;
+      // Si el negocio escribio su propio mensaje de bienvenida, se usa casi tal cual (control
+      // total del contenido) — antes se agregaba despues de un saludo fijo, y si el texto
+      // configurado YA era un saludo completo (lo mas comun), terminaba duplicado/incoherente.
+      // Solo se empareja el espaciado de las lineas numeradas (" 1. Menu" / "2.Promos" /
+      // "3.  Estado"), que escrito a mano en el panel suele quedar inconsistente.
+      message = normalizeNumberedMenuLines(settings.welcomeMessage);
       pendingMenu = "WELCOME";
     } else {
       const greetingLine = `¡Hola! Bienvenido a ${settings.restaurantName}${settings.agentName ? `, me llamo ${settings.agentName}` : ""}. ¿En que le ayudo hoy?`;
@@ -2441,12 +2481,12 @@ async function handleTextMessage(
     }
   }
 
-  const welcomeShortcut: Record<string, string> = {
-    "1": Intent.VIEW_MENU,
-    "2": Intent.ORDER_PRODUCT,
-    "3": Intent.ASK_PROMOTIONS,
-    "4": Intent.ORDER_STATUS,
-  };
+  // El significado de cada numero sale del mensaje de bienvenida REAL que se le mando: si el
+  // negocio escribio uno propio con sus opciones numeradas, se interpreta contra ese texto
+  // (sus numeros pueden no coincidir con el menu por defecto); si no, aplica el default.
+  const welcomeShortcut =
+    (settings.welcomeMessage.trim() ? buildWelcomeShortcutFromMessage(settings.welcomeMessage) : null) ??
+    DEFAULT_WELCOME_SHORTCUT;
   const returningShortcut: Record<string, string> = {
     "1": Intent.ORDER_STATUS,
     "2": Intent.ORDER_PRODUCT,
