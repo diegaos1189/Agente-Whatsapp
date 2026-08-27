@@ -179,6 +179,109 @@ export function isRegionalConfirmation(text: string, profile = getLocaleProfile(
   return profile.confirmationPhrases.some((phrase) => normalized === normalizeForPhraseMatch(phrase, profile));
 }
 
+// Palabras que por si solas confirman ("si", "confirmo", "correcto"...).
+const GENERIC_CONFIRMATION_CORE_WORDS = new Set([
+  "si",
+  "sii",
+  "siii",
+  "confirmo",
+  "confirmado",
+  "confirmar",
+  "confirmamos",
+  "correcto",
+  "correcta",
+  "listo",
+  "dale",
+  "ok",
+  "okey",
+  "vale",
+  "claro",
+  "perfecto",
+  "exacto",
+  "afirmativo",
+  "cierto",
+  "acuerdo",
+]);
+
+// Relleno tolerado alrededor de la confirmacion ("SI confirmo el pedido asi", "esta correcto mi pedido").
+const GENERIC_CONFIRMATION_FILLER_WORDS = new Set([
+  "mi",
+  "el",
+  "la",
+  "lo",
+  "es",
+  "esta",
+  "asi",
+  "pedido",
+  "orden",
+  "todo",
+  "y",
+  "de",
+  "un",
+  "una",
+  "que",
+  "ya",
+  "eso",
+  "ese",
+  "esa",
+  "quiero",
+  "gracias",
+  "senor",
+  "senora",
+  "muy",
+  "bien",
+  "pues",
+]);
+
+// Si aparece cualquiera de estas, el mensaje NO es una confirmacion limpia ("no es correcto",
+// "si pero cambia la gaseosa", "confirmo sin la arepa") y debe seguir a clasificacion normal.
+const GENERIC_CONFIRMATION_BLOCKERS = new Set([
+  "no",
+  "pero",
+  "aunque",
+  "cambia",
+  "cambiar",
+  "cambio",
+  "cambie",
+  "quita",
+  "quitar",
+  "quite",
+  "agrega",
+  "agregar",
+  "agregue",
+  "sin",
+  "menos",
+  "falta",
+  "faltan",
+  "otro",
+  "otra",
+  "mejor",
+  "espera",
+  "espere",
+  "todavia",
+  "aun",
+  "duda",
+]);
+
+/**
+ * Confirmacion generica en espanol para el paso de confirmar el pedido: acepta desde un "si"
+ * o "confirmado" hasta frases completas tipo "SI es correcto mi pedido y lo confirmo asi".
+ * A diferencia de isRegionalConfirmation (frases exactas del perfil regional), aqui se valida
+ * por tokens: debe haber al menos una palabra de confirmacion, cero palabras bloqueadoras
+ * (negaciones/cambios), y nada fuera del vocabulario de confirmacion + relleno — cualquier
+ * palabra desconocida (un producto, una direccion) manda el mensaje a clasificacion normal.
+ */
+export function isGenericOrderConfirmation(text: string, profile = getLocaleProfile()): boolean {
+  const normalized = normalizeForPhraseMatch(text, profile).replace(/[^\p{L}\p{N}\s]/gu, " ");
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length > 12) return false;
+  if (tokens.some((token) => GENERIC_CONFIRMATION_BLOCKERS.has(token))) return false;
+  if (!tokens.some((token) => GENERIC_CONFIRMATION_CORE_WORDS.has(token))) return false;
+  return tokens.every(
+    (token) => GENERIC_CONFIRMATION_CORE_WORDS.has(token) || GENERIC_CONFIRMATION_FILLER_WORDS.has(token),
+  );
+}
+
 export function isRegionalCancellation(text: string, profile = getLocaleProfile()): boolean {
   const normalized = normalizeForPhraseMatch(text, profile);
   return profile.cancellationPhrases.some((phrase) => normalized.includes(normalizeForPhraseMatch(phrase, profile)));

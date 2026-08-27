@@ -92,6 +92,7 @@ import {
   type OrderTrackingReferenceState,
 } from "./orderStatusService.js";
 import {
+  isGenericOrderConfirmation,
   isRegionalCancellation,
   isRegionalConfirmation,
   normalizeLocalizedText,
@@ -2512,8 +2513,18 @@ async function handleTextMessage(
       ]);
   let intent = intentResult.intent;
 
-  if (canApplyRegionalConfirmShortcut(context) && isRegionalConfirmation(normalizedText)) {
+  // En CONFIRMING la respuesta se interpreta deterministicamente, sin depender de que la IA
+  // clasifique bien: "1" (opcion del menu de confirmacion), un "si"/"confirmado" pelado o
+  // frases completas tipo "SI es correcto mi pedido y lo confirmo" son CONFIRM; "2" es
+  // CANCEL (la opcion "No, cancelar" del mismo menu). Bug real: el clasificador fallaba
+  // repetidamente con esas frases y el bot re-preguntaba la confirmacion en bucle.
+  if (
+    canApplyRegionalConfirmShortcut(context) &&
+    (normalizedText.trim() === "1" || isRegionalConfirmation(normalizedText) || isGenericOrderConfirmation(normalizedText))
+  ) {
     intent = Intent.CONFIRM;
+  } else if (context.orderFlow.step === OrderFlowStep.CONFIRMING && normalizedText.trim() === "2") {
+    intent = Intent.CANCEL;
   } else if (inOrderFlowAlready && isRegionalCancellation(normalizedText)) {
     intent = Intent.CANCEL;
   }
@@ -2848,7 +2859,14 @@ async function handleTextMessage(
     } else {
       const cartBeforeTurn = JSON.stringify(context.orderFlow.cart);
       const stepBeforeTurn = context.orderFlow.step;
-      const result = await runOrderFlowTurn({ context, intent, entities, text: normalizedText, settings });
+      const result = await runOrderFlowTurn({
+        context,
+        intent,
+        entities,
+        text: normalizedText,
+        settings,
+        fromNumberedMenuSelection: forcedProductName !== null,
+      });
       replyText = result.replyText;
       madeProgress = result.madeProgress;
       context.orderFlow = result.nextState;
@@ -3200,8 +3218,10 @@ async function runOrderFlowTurn(params: {
   entities: ExtractedEntities;
   text: string;
   settings: Awaited<ReturnType<typeof getBusinessSettings>>;
+  /** true cuando este turno viene de elegir un producto por numero en el menu numerado. */
+  fromNumberedMenuSelection?: boolean;
 }): Promise<OrderFlowTurnResult> {
-  const { context, intent, entities, text, settings } = params;
+  const { context, intent, entities, text, settings, fromNumberedMenuSelection = false } = params;
   const state = context.orderFlow;
 
   // Frase de correccion explicita ("no, es de 8 presas", "mejor el otro", "en realidad...").
@@ -3374,6 +3394,16 @@ async function runOrderFlowTurn(params: {
     // (pedido creado, total y tiempo estimado). El "Estamos confirmando su pedido..." que
     // habia antes solo agregaba un mensaje de relleno justo antes del mensaje real.
     replyText = "";
+  } else if (
+    fromNumberedMenuSelection &&
+    decision.nextState.step === OrderFlowStep.ASK_QUANTITY_OR_SIZE &&
+    decision.nextState.pendingProduct
+  ) {
+    // Seleccion por numero del menu numerado: respuesta fija, sin pasar por la IA — que
+    // metia el nombre completo del producto (con toda su descripcion) dentro de la pregunta
+    // ("¿Cuantas unidades de Picada para 2: carne, pollo, chorizo... deseas?") y quedaba
+    // ilegible. El nombre va en su propia linea y la pregunta queda corta.
+    replyText = `Plato seleccionado:\n*${decision.nextState.pendingProduct.name}*\n\n¿Cuantas unidades desea?\nDigita un numero`;
   } else {
     replyText = await generateResponse({
       facts: [...decision.facts, ...extraFacts],
@@ -3381,6 +3411,12 @@ async function runOrderFlowTurn(params: {
       businessName: settings.restaurantName,
       tone: settings.assistantTone,
     });
+    // El turno queda esperando la confirmacion: se agrega el menu 1/2 DESPUES de generar
+    // (la IA reformula askNext y podria comerse los numeros). Las opciones se interpretan
+    // deterministicamente en el turno siguiente ("1" confirma, "2" cancela).
+    if (decision.nextState.step === OrderFlowStep.CONFIRMING && !decision.cancelled) {
+      replyText = `${replyText}\n1. Si, confirmar\n2. No, cancelar`;
+    }
   }
 
   return {

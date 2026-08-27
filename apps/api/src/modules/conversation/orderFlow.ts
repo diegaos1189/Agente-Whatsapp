@@ -667,7 +667,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       return {
         nextState: state,
         facts: summarizeCart(state, deliveryFee, currency),
-        askNext: "¿Confirma su pedido asi? Responda *si* para confirmar o *cancelar* para anular.",
+        askNext: "¿Confirma su pedido asi?",
         readyToCreateOrder: false,
         cancelled: false,
       };
