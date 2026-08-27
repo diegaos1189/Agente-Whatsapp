@@ -132,6 +132,13 @@ export async function settingsRoutes(app: FastifyInstance) {
         });
 
     invalidateBusinessSettingsCache();
-    return updated;
+    // Igual que en el GET: los secretos nunca vuelven completos al panel, ni siquiera
+    // en la respuesta del update (la fila cruda de Prisma los trae sin enmascarar).
+    return {
+      ...updated,
+      whatsappToken: maskSecret(updated.whatsappToken),
+      whatsappAppSecret: maskSecret(updated.whatsappAppSecret),
+      whatsappVerifyToken: maskSecret(updated.whatsappVerifyToken),
+    };
   });
 }

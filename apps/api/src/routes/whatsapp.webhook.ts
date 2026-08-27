@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isProduction } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 import { parseMetaWebhookPayload, type MetaWebhookPayload } from "../modules/whatsapp/whatsappTypes.js";
 import { handleIncomingMessage } from "../modules/conversation/conversationService.js";
@@ -48,6 +49,15 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
   // en bucle; los errores de procesamiento se loguean pero no se propagan al webhook.
   app.post("/webhooks/whatsapp", async (request, reply) => {
     const settings = await getBusinessSettings();
+
+    // En produccion con el proveedor real de Meta, el app secret es obligatorio: sin el
+    // no se puede verificar la firma HMAC y cualquiera que conozca la URL podria inyectar
+    // mensajes falsos (pedidos inventados, gasto de IA). Fallamos cerrado en vez de confiar.
+    if (isProduction && settings.whatsappProvider === "meta" && !settings.whatsappAppSecret) {
+      logger.error("Webhook de WhatsApp rechazado: falta el app secret en produccion (configuralo en Configuracion)");
+      return reply.status(403).send({ error: "Webhook sin verificacion configurada" });
+    }
+
     const signature = request.headers["x-hub-signature-256"];
     if (!isValidMetaSignature(settings.whatsappAppSecret, request.rawBody, Array.isArray(signature) ? signature[0] : signature)) {
       logger.warn("Webhook de WhatsApp con firma invalida, se rechaza");
