@@ -2730,6 +2730,14 @@ async function handleTextMessage(
       } else {
         const numberedCategories = await buildNumberedCategoriesReply();
         if (numberedCategories) {
+          // Fotos generales del menu (si hay configuradas) se mandan antes de la lista de
+          // categorias, no despues — asi el cliente las ve primero y responde con el numero.
+          if (settings.menuImages.length > 0) {
+            const client = await getWhatsAppClient();
+            for (const image of settings.menuImages.slice(0, 5)) {
+              await client.sendImageMessage(phone, image);
+            }
+          }
           replyText = numberedCategories.text;
           context.pendingMenu = "CATEGORIES";
           context.pendingCategoryIds = numberedCategories.categoryIds;

@@ -360,6 +360,7 @@ export interface BusinessSettingsDTO {
   id: string;
   restaurantName: string;
   logoUrl: string | null;
+  menuImages: string[];
   phone: string;
   address: string;
   currency: string;

@@ -9,6 +9,7 @@ const openingHoursDaySchema = z.object({ open: z.string(), close: z.string() }).
 const settingsUpdateSchema = z.object({
   restaurantName: z.string().min(1).optional(),
   logoUrl: z.string().nullable().optional(),
+  menuImages: z.array(z.string()).max(5, "Maximo 5 imagenes de menu").optional(),
   phone: z.string().min(1).optional(),
   address: z.string().min(1).optional(),
   currency: z.string().optional(),

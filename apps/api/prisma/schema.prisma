@@ -476,6 +476,9 @@ model BusinessSettings {
   restaurantName         String
   /// Logo del negocio (data URL base64) para mostrar en el panel admin, arriba del menu.
   logoUrl                String?
+  /// Fotos generales del menu (data URLs base64), maximo 5 — el bot las manda cuando el
+  /// cliente pide ver el menu, antes de la lista de categorias numerada.
+  menuImages             String[] @default([])
   phone                  String
   address                String
   currency               String   @default("COP")

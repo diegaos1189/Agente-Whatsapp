@@ -14,6 +14,7 @@ function toDTO(row: any): BusinessSettingsDTO {
     id: row.id,
     restaurantName: row.restaurantName,
     logoUrl: row.logoUrl,
+    menuImages: row.menuImages ?? [],
     phone: row.phone,
     address: row.address,
     currency: row.currency,
