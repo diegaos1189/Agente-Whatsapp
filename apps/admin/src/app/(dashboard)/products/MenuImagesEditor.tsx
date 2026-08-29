@@ -34,23 +34,13 @@ function resizeImageToDataUrl(file: File, maxSize: number): Promise<string> {
 
 export function MenuImagesEditor({ menuImages }: { menuImages: string[] }) {
   const router = useRouter();
+  const [saved, setSaved] = useState(menuImages);
   const [images, setImages] = useState(menuImages);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
 
-  async function persist(next: string[]) {
-    setSaving(true);
-    setError(null);
-    try {
-      await apiClientFetch("/settings", { method: "PUT", body: JSON.stringify({ menuImages: next }) });
-      setImages(next);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudieron guardar las fotos del menu");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const isDirty = JSON.stringify(images) !== JSON.stringify(saved);
 
   async function handleAdd(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -60,16 +50,35 @@ export function MenuImagesEditor({ menuImages }: { menuImages: string[] }) {
       setError(`Maximo ${MAX_IMAGES} fotos del menu`);
       return;
     }
+    setError(null);
+    setJustSaved(false);
     try {
       const dataUrl = await resizeImageToDataUrl(file, IMAGE_MAX_SIZE);
-      await persist([...images, dataUrl]);
+      setImages((prev) => [...prev, dataUrl]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo procesar la imagen");
     }
   }
 
-  async function handleRemove(index: number) {
-    await persist(images.filter((_, i) => i !== index));
+  function handleRemove(index: number) {
+    setError(null);
+    setJustSaved(false);
+    setImages((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await apiClientFetch("/settings", { method: "PUT", body: JSON.stringify({ menuImages: images }) });
+      setSaved(images);
+      setJustSaved(true);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudieron guardar las fotos del menu");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -85,7 +94,7 @@ export function MenuImagesEditor({ menuImages }: { menuImages: string[] }) {
       <h4 style={{ marginTop: 0 }}>Fotos del menú ({images.length}/{MAX_IMAGES})</h4>
       <p className="muted" style={{ marginTop: -6, fontSize: 12, marginBottom: 12 }}>
         El agente manda estas fotos por WhatsApp cuando el cliente pide ver el menú, antes de la
-        lista de categorías.
+        lista de categorías. Agrega o quita las que quieras y dale <strong>Guardar</strong> al final.
       </p>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         {images.map((src, i) => (
@@ -133,12 +142,19 @@ export function MenuImagesEditor({ menuImages }: { menuImages: string[] }) {
               textAlign: "center",
             }}
           >
-            {saving ? "..." : "+ Agregar"}
+            + Agregar
             <input type="file" accept="image/*" onChange={handleAdd} disabled={saving} style={{ display: "none" }} />
           </label>
         )}
       </div>
-      {error && <div className="error-text">{error}</div>}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button type="button" className="cta" onClick={handleSave} disabled={saving || !isDirty}>
+          {saving ? "Guardando..." : "Guardar"}
+        </button>
+        {!isDirty && justSaved && <span className="muted" style={{ fontSize: 12 }}>Guardado ✓</span>}
+        {isDirty && <span className="muted" style={{ fontSize: 12 }}>Tienes cambios sin guardar</span>}
+      </div>
+      {error && <div className="error-text" style={{ marginTop: 8 }}>{error}</div>}
     </div>
   );
 }
