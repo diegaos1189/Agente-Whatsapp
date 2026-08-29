@@ -13,6 +13,7 @@ import { settingsRoutes } from "./routes/settings.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { adminUserRoutes } from "./routes/adminUsers.js";
 import { faqRoutes } from "./routes/faqs.js";
+import { platformRestaurantRoutes } from "./routes/platformRestaurants.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { paymentWebhookRoutes } from "./routes/paymentWebhooks.js";
 
@@ -86,6 +87,7 @@ export function buildApp() {
   app.register(metricsRoutes);
   app.register(adminUserRoutes);
   app.register(faqRoutes);
+  app.register(platformRestaurantRoutes);
 
   return app;
 }

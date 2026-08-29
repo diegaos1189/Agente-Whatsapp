@@ -60,6 +60,8 @@ export interface OrderFlowDecideInput {
   acceptedPaymentMethods?: PaymentMethod[];
   /** true si el mensaje suena a correccion ("no, es de 8 presas", "mejor el otro") — ver deteccion en conversationService. */
   isCorrectionAttempt?: boolean;
+  /** true si el mensaje es un "si" pelado sin nombrar producto (ver isPlainAffirmativeReply) — en los pasos opcionales significa "si quiero, muestreme las opciones". */
+  isPlainAffirmative?: boolean;
   /** Bebidas disponibles del catalogo, para ofrecerlas explicitamente en ASK_DRINKS. */
   availableDrinks?: MatchedProductRef[];
   /** Acompanantes disponibles del catalogo, para ofrecerlos explicitamente en ASK_SIDES. */
@@ -226,6 +228,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     businessDeliveryFee,
     currency,
     isCorrectionAttempt = false,
+    isPlainAffirmative = false,
     acceptedPaymentMethods = DEFAULT_PAYMENT_METHODS,
     availableDrinks,
     availableSides,
@@ -532,6 +535,18 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     }
 
     case OrderFlowStep.ASK_SIDES: {
+      // "¿Desea agregar algun acompanante?" -> "Si" (sin nombrar cual): le mostramos las
+      // opciones y seguimos en este paso. Bug real: el flujo avanzaba a bebidas/domicilio
+      // como si hubiera dicho que no.
+      if (isPlainAffirmative && !matchedProduct && matchedSides.length === 0) {
+        return {
+          nextState: state,
+          facts: [],
+          askNext: buildSidesAskNext(availableSides, currency),
+          readyToCreateOrder: false,
+          cancelled: false,
+        };
+      }
       const cartWithSides: CartLine[] = [
         ...state.cart,
         ...matchedSides.map((s) => ({ productId: s.id, productName: s.name, quantity: 1, unitPrice: s.price })),
@@ -551,6 +566,17 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     }
 
     case OrderFlowStep.ASK_DRINKS: {
+      // "¿Desea agregar alguna bebida?" -> "Si" (sin decir cual): preguntamos cual, listando
+      // las bebidas del catalogo, en vez de saltar a la pregunta de domicilio.
+      if (isPlainAffirmative && !matchedProduct && matchedSides.length === 0) {
+        return {
+          nextState: state,
+          facts: [],
+          askNext: buildDrinksAskNext(availableDrinks, currency),
+          readyToCreateOrder: false,
+          cancelled: false,
+        };
+      }
       const drinkItems: CartLine[] = [
         ...(matchedProduct ? [{ productId: matchedProduct.id, productName: matchedProduct.name, quantity: entities.quantity ?? 1, unitPrice: matchedProduct.price }] : []),
         ...matchedSides.map((s) => ({ productId: s.id, productName: s.name, quantity: 1, unitPrice: s.price })),
@@ -667,7 +693,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       return {
         nextState: state,
         facts: summarizeCart(state, deliveryFee, currency),
-        askNext: "¿Confirma su pedido asi? Responda *si* para confirmar o *cancelar* para anular.",
+        askNext: "¿Confirma su pedido asi?",
         readyToCreateOrder: false,
         cancelled: false,
       };

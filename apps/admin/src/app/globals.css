@@ -879,6 +879,18 @@ button.cta:hover { background: linear-gradient(135deg, #4bcf30, #31a71b); }
   object-fit: contain;
 }
 
+/* Variante "wordmark" (marca de la plataforma): pequeña, sin marco, pegada a la izquierda. */
+.sidebar-logo-wordmark {
+  height: 24px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.mobile-topbar-logo-wordmark {
+  height: 18px;
+  width: auto;
+}
+
 .opening-hours-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

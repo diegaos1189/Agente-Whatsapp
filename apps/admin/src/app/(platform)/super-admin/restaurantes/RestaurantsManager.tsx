@@ -1,44 +1,89 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiClientFetch } from "@/lib/apiClient";
 import { RestaurantModal, type RestaurantDraft } from "./RestaurantModal";
 import { RestaurantRow } from "./RestaurantRow";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { SEED_RESTAURANTS, todayIso, type PlatformRestaurant } from "./types";
+import { LEGACY_SEED_IDS, type PlatformRestaurant } from "./types";
 
-const STORAGE_KEY = "platform-restaurants-mock";
+/** Clave donde la version anterior (sin backend) guardaba la lista en el navegador. */
+const LEGACY_STORAGE_KEY = "platform-restaurants-mock";
 
 type ModalState = { mode: "create" } | { mode: "edit"; restaurant: PlatformRestaurant } | null;
 
+/**
+ * Si este navegador tiene restaurantes de la epoca sin backend (localStorage) y la base de
+ * datos aun esta vacia, los sube una sola vez para no perder lo que el dueño ya registro.
+ */
+async function importLegacyLocalRestaurants(serverList: PlatformRestaurant[]): Promise<PlatformRestaurant[]> {
+  let stored: string | null = null;
+  try {
+    stored = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+  } catch {
+    return serverList;
+  }
+  if (!stored) return serverList;
+
+  if (serverList.length === 0) {
+    let legacy: PlatformRestaurant[] = [];
+    try {
+      legacy = (JSON.parse(stored) as PlatformRestaurant[]).filter((r) => !LEGACY_SEED_IDS.includes(r.id));
+    } catch {
+      legacy = [];
+    }
+    for (const r of legacy) {
+      await apiClientFetch<PlatformRestaurant>("/platform/restaurants", {
+        method: "POST",
+        body: JSON.stringify({
+          name: r.name,
+          city: r.city,
+          address: r.address,
+          ownerPhone: r.ownerPhone,
+          ownerEmail: r.ownerEmail,
+          currency: r.currency,
+          status: r.status,
+        }),
+      });
+    }
+    if (legacy.length > 0) {
+      serverList = await apiClientFetch<PlatformRestaurant[]>("/platform/restaurants");
+    }
+  }
+
+  try {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // sin permisos de localStorage: no pasa nada, el import ya quedo hecho
+  }
+  return serverList;
+}
+
 export function RestaurantsManager() {
-  const [restaurants, setRestaurants] = useState<PlatformRestaurant[]>(SEED_RESTAURANTS);
+  const [restaurants, setRestaurants] = useState<PlatformRestaurant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState<ModalState>(null);
   const [deactivating, setDeactivating] = useState<PlatformRestaurant | null>(null);
-  // Hasta que no se leyo localStorage no se escribe, si no el primer render pisaria lo guardado
-  // con la semilla.
-  const [loaded, setLoaded] = useState(false);
 
-  // Persistencia solo para poder mostrar la pantalla sin que se reinicie en cada refresh.
-  // Cuando exista backend multi-tenant esto se reemplaza por fetch.
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) setRestaurants(JSON.parse(stored) as PlatformRestaurant[]);
-    } catch {
-      // localStorage bloqueado o JSON corrupto: se queda con la semilla
-    }
-    setLoaded(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        let list = await apiClientFetch<PlatformRestaurant[]>("/platform/restaurants");
+        list = await importLegacyLocalRestaurants(list);
+        if (!cancelled) setRestaurants(list);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "No se pudo cargar la lista.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  useEffect(() => {
-    if (!loaded) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(restaurants));
-    } catch {
-      // sin persistencia, la lista sigue funcionando en memoria
-    }
-  }, [restaurants, loaded]);
 
   const term = query.trim().toLowerCase();
   const visible = term
@@ -46,26 +91,51 @@ export function RestaurantsManager() {
     : restaurants;
   const activeCount = restaurants.filter((r) => r.status === "ACTIVE").length;
 
-  function handleSave(draft: RestaurantDraft) {
-    if (modal?.mode === "edit") {
-      const id = modal.restaurant.id;
-      setRestaurants((prev) => prev.map((r) => (r.id === id ? { ...r, ...draft } : r)));
-    } else {
-      setRestaurants((prev) => [
-        ...prev,
-        { ...draft, id: `r-${Date.now().toString(36)}`, createdAt: todayIso() },
-      ]);
+  async function handleSave(draft: RestaurantDraft) {
+    setError(null);
+    try {
+      if (modal?.mode === "edit") {
+        const id = modal.restaurant.id;
+        const updated = await apiClientFetch<PlatformRestaurant>(`/platform/restaurants/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(draft),
+        });
+        setRestaurants((prev) => prev.map((r) => (r.id === id ? updated : r)));
+      } else {
+        const created = await apiClientFetch<PlatformRestaurant>("/platform/restaurants", {
+          method: "POST",
+          body: JSON.stringify(draft),
+        });
+        setRestaurants((prev) => [...prev, created]);
+      }
+      setModal(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo guardar el restaurante.");
     }
-    setModal(null);
   }
 
-  function setStatus(id: string, status: PlatformRestaurant["status"]) {
-    setRestaurants((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+  async function setStatus(id: string, status: PlatformRestaurant["status"]) {
+    setError(null);
+    try {
+      const updated = await apiClientFetch<PlatformRestaurant>(`/platform/restaurants/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setRestaurants((prev) => prev.map((r) => (r.id === id ? updated : r)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo cambiar el estado.");
+    }
   }
 
-  function handleDelete(id: string) {
-    setRestaurants((prev) => prev.filter((r) => r.id !== id));
-    setModal(null);
+  async function handleDelete(id: string) {
+    setError(null);
+    try {
+      await apiClientFetch<{ ok: boolean }>(`/platform/restaurants/${id}`, { method: "DELETE" });
+      setRestaurants((prev) => prev.filter((r) => r.id !== id));
+      setModal(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo eliminar el restaurante.");
+    }
   }
 
   return (
@@ -88,7 +158,7 @@ export function RestaurantsManager() {
       <div
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 12 }}
       >
-        {/* Buscador local, no el <SearchBox> de query string: la lista vive en estado del cliente. */}
+        {/* Buscador local, no el <SearchBox> de query string: la lista ya esta cargada en el cliente. */}
         <div className="search-box">
           <span className="search-box-icon">⌕</span>
           <input
@@ -103,11 +173,18 @@ export function RestaurantsManager() {
         </button>
       </div>
 
+      {error && (
+        <div className="error-text" style={{ marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+
       <div className="table-scroll">
         <table>
           <thead>
             <tr>
               <th>Nombre</th>
+              <th>Link</th>
               <th>Ciudad</th>
               <th>Contacto del dueño</th>
               <th>Moneda</th>
@@ -127,8 +204,12 @@ export function RestaurantsManager() {
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={7} className="muted">
-                  {term ? `Ningún restaurante coincide con "${query.trim()}".` : "Aún no hay restaurantes. Crea el primero arriba."}
+                <td colSpan={8} className="muted">
+                  {loading
+                    ? "Cargando restaurantes…"
+                    : term
+                      ? `Ningún restaurante coincide con "${query.trim()}".`
+                      : "Aún no hay restaurantes. Crea el primero arriba."}
                 </td>
               </tr>
             )}

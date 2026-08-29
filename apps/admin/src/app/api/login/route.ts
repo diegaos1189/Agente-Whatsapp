@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertSessionSecretAvailable, checkCredentials, signSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { firstAllowedPath, type PermissionKey } from "@/lib/authConstants";
-import { isLoginRateLimited, recordLoginAttempt, resetLoginAttempts } from "@/lib/loginRateLimit";
+import { clientIpForRateLimit, isLoginRateLimited, recordLoginAttempt, resetLoginAttempts } from "@/lib/loginRateLimit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Configuracion de sesion invalida" }, { status: 503 });
   }
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = clientIpForRateLimit(request.headers.get("x-forwarded-for"));
 
   if (isLoginRateLimited(ip)) {
     return NextResponse.json({ error: "Demasiados intentos. Espera unos minutos e intenta de nuevo." }, { status: 429 });

@@ -3,11 +3,24 @@ import {
   SESSION_COOKIE_NAME,
   decodeSessionPayload,
   hasPermission,
+  isSessionExpired,
   ROUTE_PERMISSIONS,
   ADMIN_ONLY_PREFIXES,
   ADMIN_ROLE,
   firstAllowedPath,
 } from "@/lib/authConstants";
+
+// Comparacion en tiempo constante (Edge no tiene crypto.timingSafeEqual): recorre siempre
+// la cadena completa en vez de cortar en la primera diferencia, para no filtrar por timing
+// cuantos caracteres de la firma coinciden.
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
 
 // Edge runtime no soporta node:crypto, asi que la firma se re-verifica aqui con Web Crypto.
 async function hmacHex(secret: string, data: string): Promise<string> {
@@ -51,12 +64,12 @@ export async function middleware(request: NextRequest) {
   }
 
   const expectedSignature = await hmacHex(secret, payloadB64);
-  if (signature !== expectedSignature) {
+  if (!timingSafeEqualHex(signature, expectedSignature)) {
     return NextResponse.redirect(loginUrl);
   }
 
   const payload = decodeSessionPayload(payloadB64);
-  if (!payload) {
+  if (!payload || isSessionExpired(payload)) {
     return NextResponse.redirect(loginUrl);
   }
 
@@ -75,5 +88,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|api/login|api/public-settings|_next/static|_next/image|favicon.ico|$).*)"],
+  matcher: ["/((?!login|api/login|api/public-settings|_next/static|_next/image|favicon.ico|icon.svg|$).*)"],
 };

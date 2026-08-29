@@ -1,6 +1,55 @@
 # SECURITY_AUDIT
 
 Fecha: August 21, 2026
+Ultima revision: August 26, 2026
+
+## Actualizacion 2026-08-26
+
+Re-auditoria del codigo completo (incluye superficies nuevas desde la auditoria anterior: pagos, super-admin, landing publica por slug). Hallazgos corregidos en esta pasada:
+
+### FIXED 2026-08-26 - `PUT /api/settings` devolvia los secretos de WhatsApp sin enmascarar
+
+Severidad: `HIGH`
+
+- El GET enmascaraba `whatsappToken`/`whatsappAppSecret`/`whatsappVerifyToken`, pero el PUT devolvia la fila cruda de Prisma con los secretos completos al navegador.
+- Corregido en `apps/api/src/routes/settings.ts`: la respuesta del update aplica el mismo `maskSecret` que el GET.
+
+### FIXED 2026-08-26 - MEDIUM-01: webhook de Meta sin verificar cuando falta el app secret
+
+- En produccion con `whatsappProvider=meta` y sin app secret configurado, el webhook ahora rechaza con 403 (falla cerrado) en vez de aceptar cualquier POST sin firma.
+- Desarrollo/mock siguen sin exigir firma. Ver `apps/api/src/routes/whatsapp.webhook.ts`.
+
+### FIXED 2026-08-26 - Sesiones del panel sin expiracion
+
+Severidad: `MEDIUM`
+
+- La cookie expiraba a los 30 dias, pero el token firmado no caducaba nunca: un token robado era valido para siempre.
+- Corregido: `isSessionExpired` en `authConstants.ts` (30 dias desde `iat`, igual que el `maxAge` de la cookie), verificado en el middleware.
+
+### FIXED 2026-08-26 - Comparacion de firma HMAC no constante en el middleware Edge
+
+Severidad: `LOW`
+
+- `signature !== expectedSignature` cortaba en la primera diferencia. Ahora usa comparacion en tiempo constante (`timingSafeEqualHex`).
+
+### FIXED 2026-08-26 - Rate limit de login confiaba en la primera entrada de `x-forwarded-for`
+
+Severidad: `MEDIUM`
+
+- La primera entrada de `x-forwarded-for` la controla el cliente (los proxies agregan al final): permitia saltarse el limite de fuerza bruta con una "IP" nueva por intento y crecer el mapa en memoria sin limite.
+- Corregido en `loginRateLimit.ts`: se usa la ultima entrada (la del proxy propio) y el mapa tiene tope de 5000 entradas con purga.
+
+### FIXED 2026-08-26 - LOW-04: headers de seguridad del panel
+
+- `next.config.mjs` ahora envia `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` y `Permissions-Policy` en todas las rutas. CSP completa sigue pendiente (los estilos inline del panel la harian fragil sin una refactorizacion).
+
+### FIXED 2026-08-26 - Postgres y n8n publicados en todas las interfaces en docker-compose
+
+Severidad: `MEDIUM` (solo aplica si el compose corre en un servidor con IP publica)
+
+- Postgres (credenciales de plantilla `pollos/pollos`) y n8n (permite reclamar la cuenta de dueño al primer visitante) ahora se publican solo en `127.0.0.1`.
+
+Verificacion: suite completa de tests del API (342 pass) y typecheck de api + admin sin errores.
 
 ## Alcance
 
@@ -95,7 +144,7 @@ Recomendacion:
 
 ### MEDIUM-01 - Verificacion HMAC del webhook de Meta es opcional
 
-Estado: `OPEN`
+Estado: `FIXED 2026-08-26` (ver actualizacion arriba)
 
 Impacto:
 
@@ -183,7 +232,7 @@ Observacion:
 
 ### LOW-04 - No hay CSP/headers hardening revisados en detalle para el panel
 
-Estado: `OPEN`
+Estado: `FIXED 2026-08-26` (headers base; CSP completa pendiente — ver actualizacion arriba)
 
 ### LOW-05 - No existe evidencia de rotacion automatica de secretos
 

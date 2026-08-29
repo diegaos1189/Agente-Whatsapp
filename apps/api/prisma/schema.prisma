@@ -587,6 +587,30 @@ model CustomerReactivationCampaign {
   @@map("customer_reactivation_campaigns")
 }
 
+// ---------- Plataforma (dueño del producto) ----------
+
+/// Negocio cliente de la plataforma, visible en /super-admin/restaurantes. Es el registro
+/// central de clientes del dueño del producto; cada negocio sigue corriendo su propio
+/// deployment del template (esta tabla no lo conecta todavia — multi-tenant real es trabajo
+/// posterior).
+model PlatformRestaurant {
+  id         String   @id @default(cuid())
+  name       String
+  /// Identificador para el link publico del restaurante (<url-del-panel>/<slug>). Se genera
+  /// del nombre al crearlo y no cambia aunque se renombre, para no romper links compartidos.
+  slug       String   @unique
+  city       String
+  address    String   @default("")
+  ownerPhone String   @default("")
+  ownerEmail String   @default("")
+  currency   String   @default("COP")
+  status     String   @default("ACTIVE") // "ACTIVE" | "INACTIVE"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("platform_restaurants")
+}
+
 // ---------- Usuarios del panel admin ----------
 
 model AdminUser {

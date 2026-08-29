@@ -8,16 +8,18 @@ import { PlatformNavIcon } from "./PlatformNavIcon";
 /**
  * Shell del area de plataforma (dueño del producto, no dueño de un restaurante).
  *
- * Seccion independiente del panel de un solo restaurante: no toca su nav, su layout ni
- * middleware.ts. Hoy todo corre con datos mock en memoria; la autenticacion de super admin
- * y el backend multi-tenant son trabajo posterior.
+ * Seccion independiente del panel de un solo restaurante: no toca su nav ni su layout. La
+ * lista de restaurantes ya vive en la base de datos (platform_restaurants); el multi-tenant
+ * real (conectar cada fila con su deployment) es trabajo posterior.
  */
 export default function PlatformLayout({ children }: { children: ReactNode }) {
   return (
     <div className="layout">
       <SidebarShell
         title="Plataforma"
-        footer={<div className="muted" style={{ fontSize: 12, padding: "0 10px" }}>Datos de demostración</div>}
+        logoUrl="/pedix-logo.svg?v=3"
+        logoVariant="wordmark"
+        footer={<div className="muted" style={{ fontSize: 12, padding: "0 10px" }}>Pedix</div>}
       >
         <nav>
           <Link href="/super-admin/restaurantes">

@@ -5,6 +5,15 @@ import { ADMIN_ROLE, STAFF_ROLE, PERMISSION_KEYS, type PermissionKey, type Admin
 // TextEncoder) disponibles tanto en Node como en Edge.
 export const SESSION_COOKIE_NAME = "admin_session";
 
+// Vida maxima de una sesion firmada. Debe coincidir con el maxAge de la cookie en
+// /api/login: sin este chequeo, un token robado seria valido para siempre aunque la
+// cookie del navegador expire (la firma HMAC no caduca sola).
+export const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function isSessionExpired(payload: SessionPayload, now = Date.now()): boolean {
+  return typeof payload.iat !== "number" || payload.iat > now || now - payload.iat > SESSION_MAX_AGE_MS;
+}
+
 export { ADMIN_ROLE, STAFF_ROLE, PERMISSION_KEYS };
 export type { PermissionKey };
 
@@ -56,7 +65,7 @@ export const ROUTE_PERMISSIONS: Array<{ prefix: string; permission: PermissionKe
 ];
 
 /** Rutas que solo puede ver/editar el rol ADMIN, sin excepcion. */
-export const ADMIN_ONLY_PREFIXES = ["/settings", "/users"];
+export const ADMIN_ONLY_PREFIXES = ["/settings", "/users", "/super-admin"];
 
 export function firstAllowedPath(payload: SessionPayload): string {
   if (payload.role === ADMIN_ROLE) return "/metrics";

@@ -7,7 +7,9 @@ services:
       POSTGRES_PASSWORD: pollos
       POSTGRES_DB: pollos_corralito
     ports:
-      - "5434:5432"
+      # Solo localhost: este Postgres tiene credenciales simples de plantilla y no debe
+      # quedar expuesto a internet si el compose corre en un servidor con IP publica.
+      - "127.0.0.1:5434:5432"
     volumes:
       - pollos_pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -52,7 +54,9 @@ services:
     image: n8nio/n8n:latest
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      # Solo localhost: n8n recien instalado deja crear la cuenta de dueño a quien primero
+      # abra la URL — expuesto a internet, cualquiera podria reclamar la instancia.
+      - "127.0.0.1:5678:5678"
     environment:
       N8N_HOST: localhost
       N8N_PORT: 5678
