@@ -473,6 +473,7 @@ vi.mock("../src/modules/conversation/whatsappAudioService.js", () => ({
 }));
 
 import { handleIncomingMessage } from "../src/modules/conversation/conversationService.js";
+import { extractEntities } from "../src/modules/ai/entityExtractor.js";
 import { OrderFlowStep } from "@pollos/shared";
 
 function seedInSides(overrides: Partial<any> = {}) {
@@ -621,6 +622,89 @@ describe("acompañantes/bebidas guiados por numero", () => {
 
     const conv = state.conversations.find((c) => c.contactId === contact.id)!;
     expect(conv.context.pendingSideDrink).toEqual({ step: "SIDES", stage: "CONFIRM", optionIds: [] });
+  });
+
+  it("no dice 'no encontre X' cuando la IA repite palabras del propio nombre del combo", async () => {
+    // Bug real: un combo llamado "Pollo entero: 8 Presas + Papas cocidas + Arepas" — al
+    // confirmar la cantidad, la IA a veces "extrae" Papas cocidas/Arepas como si fueran
+    // acompanantes pedidos aparte (son solo parte del nombre del combo, ya incluidos).
+    vi.mocked(extractEntities).mockResolvedValueOnce({
+      productType: null,
+      quantity: 1,
+      size: null,
+      sides: ["Papas cocidas", "Arepas"],
+      deliveryType: null,
+      address: null,
+      neighborhood: null,
+      reference: null,
+      paymentMethod: null,
+      name: null,
+      contactPhone: null,
+    });
+
+    const contact = {
+      id: `contact-${state.nextContactId++}`,
+      phone: "573001112233",
+      name: "Diego",
+      cartRecoveryOptOutAt: null,
+      cartRecoveryOptOutReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    state.contacts.push(contact);
+    const conversation = {
+      id: `conv-${state.nextConversationId++}`,
+      contactId: contact.id,
+      status: ConversationStatus.ACTIVE,
+      isHandoff: false,
+      handoffReason: null,
+      assignedAdminUserId: null,
+      takenAt: null,
+      failedAttempts: 0,
+      context: {
+        orderFlow: {
+          step: OrderFlowStep.ASK_QUANTITY_OR_SIZE,
+          cart: [],
+          deliveryType: null,
+          paymentMethod: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          contactPhone: null,
+          sidesAsked: false,
+          drinksAsked: false,
+          pendingProduct: {
+            id: "prod-combo",
+            name: "Pollo entero: 8 Presas + Papas cocidas + Arepas",
+            price: 48000,
+            categoryName: "Pollo Asado",
+          },
+        },
+        pendingMenu: null,
+        pendingCategoryIds: null,
+        pendingProductIds: null,
+        pendingSideDrink: null,
+        activeCart: null,
+        checkout: null,
+        repeatOrder: { pendingReplacement: null, lastSourceOrderId: null, lastSourceOrderCode: null },
+        orderTracking: { lastReferencedOrderId: null, lastReferencedOrderCode: null },
+        upsell: null,
+      },
+      lastMessageAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    state.conversations.push(conversation);
+
+    await sendMessage(contact.phone, "1", "wamid-1");
+
+    const body = state.sentTexts[0]!.body;
+    expect(body).not.toContain("No encontre");
+    // El paso de acompanantes sigue disponible de verdad — no quedo marcado como "ya
+    // resuelto" solo porque la IA repitio el nombre del combo.
+    const conv = state.conversations.find((c) => c.contactId === contact.id)!;
+    expect(conv.context.orderFlow.step).toBe(OrderFlowStep.ASK_SIDES);
+    expect(body).toContain("¿Deseas agregar algún acompañante?");
   });
 
   it("'1' en la confirmacion de acompanantes muestra los productos numerados", async () => {

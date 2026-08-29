@@ -825,11 +825,27 @@ interface ResolvedSides {
   unmatchedTexts: string[];
 }
 
-async function resolveSidesFromEntities(entities: ExtractedEntities): Promise<ResolvedSides> {
+/**
+ * Un "acompanante" mencionado por la IA a veces no es un pedido real, sino un eco del
+ * nombre del propio producto principal (ej: "Pollo entero: 8 Presas + Papas cocidas +
+ * Arepas" — el nombre del combo ya incluye "Papas cocidas"/"Arepas", y la IA a veces las
+ * repite como si el cliente las hubiera pedido aparte). Si el texto ya aparece dentro del
+ * nombre de un producto que ya esta en el carrito o pendiente de confirmar, se ignora en vez
+ * de mostrar "no encontre X" y de marcar el paso de acompanantes como ya resuelto.
+ */
+function isSideAlreadyPartOfProduct(sideText: string, productNames: string[]): boolean {
+  const normalized = normalizeText(sideText);
+  if (!normalized) return false;
+  return productNames.some((name) => normalizeText(name).includes(normalized));
+}
+
+async function resolveSidesFromEntities(entities: ExtractedEntities, productNamesToIgnore: string[] = []): Promise<ResolvedSides> {
   if (!entities.sides || entities.sides.length === 0) return { matched: [], unmatchedTexts: [] };
   const matched: Array<{ id: string; name: string; price: number; categoryName: string }> = [];
   const unmatchedTexts: string[] = [];
-  for (const side of entities.sides) {
+  for (const rawSide of entities.sides) {
+    if (isSideAlreadyPartOfProduct(rawSide, productNamesToIgnore)) continue;
+    const side = rawSide;
     const product = await findBestProductMatch(side);
     // Un "acompanante" nunca puede ser un combo — un combo es un paquete completo, no algo
     // que se agrega suelto. Bug real: el cliente pregunto "¿tienen gaseosas?" (una consulta,
@@ -3388,10 +3404,15 @@ async function runOrderFlowTurn(params: {
 
   // Resolvemos acompanantes/otros productos mencionados en CUALQUIER paso del flujo de pedido,
   // no solo cuando se pregunta explicitamente por ellos — asi "pollo 8 piezas y una gaseosa"
-  // en un solo mensaje no pierde la gaseosa.
+  // en un solo mensaje no pierde la gaseosa. Se ignoran menciones que ya son parte del nombre
+  // del producto principal (pendiente o ya en el carrito) — ver isSideAlreadyPartOfProduct.
+  const productNamesToIgnore = [
+    ...(state.pendingProduct ? [state.pendingProduct.name] : []),
+    ...state.cart.map((line) => line.productName),
+  ];
   const { matched: matchedSides, unmatchedTexts: unmatchedSideTexts } =
     entities.sides && entities.sides.length > 0
-      ? await resolveSidesFromEntities(entities)
+      ? await resolveSidesFromEntities(entities, productNamesToIgnore)
       : { matched: [], unmatchedTexts: [] };
 
   // Bebidas/acompanantes disponibles del catalogo, para ofrecerlos explicitamente en
