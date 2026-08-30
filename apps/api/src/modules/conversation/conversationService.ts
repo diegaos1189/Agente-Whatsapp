@@ -58,6 +58,7 @@ import {
   getPendingOrderQuestion,
   isExplicitCancelRequest,
   type OrderFlowState,
+  type MatchedProductRef,
 } from "./orderFlow.js";
 import {
   EMPTY_STRUCTURED_CART,
@@ -148,7 +149,7 @@ export interface InboundMessageInput {
 }
 
 /** Que menu numerado se le acaba de mandar al cliente (para interpretar su proxima respuesta "1"/"2"/"3"). */
-type PendingMenu = "WELCOME" | "RETURNING" | "CATEGORIES" | "PRODUCTS" | null;
+type PendingMenu = "WELCOME" | "RETURNING" | "CATEGORIES" | "PRODUCTS" | "ADDON" | null;
 
 /** Mapa numero->intent del menu de bienvenida POR DEFECTO (el que arma el bot cuando el negocio no escribio uno propio). */
 const DEFAULT_WELCOME_SHORTCUT: Record<string, string> = {
@@ -2488,6 +2489,28 @@ async function handleTextMessage(
     }
   }
 
+  // El cliente respondio con el numero de un acompanante/bebida que le mostramos (ver
+  // addOnMenu en runOrderFlowTurn). A diferencia del menu de productos/categorias de arriba,
+  // esto SI aplica en medio del pedido (es justo cuando se muestra) y, si la respuesta no es
+  // un numero valido, NO insistimos — cae al procesamiento normal del turno, que ya sabe
+  // interpretar un "no" u otro texto libre para declinar el acompanante/bebida. Bug real: sin
+  // esto, un "1" eligiendo el primer acompanante de la lista se mandaba a clasificacion de IA,
+  // que podia "recordar" el plato principal del historial reciente y responder con productos
+  // ambiguos que no tenian nada que ver con lo que el cliente pidio.
+  let forcedSideName: string | null = null;
+  if (context.pendingMenu === "ADDON") {
+    const optionIds = context.pendingProductIds ?? [];
+    const chosenIndex = parseMenuSelectionIndex(normalizedText);
+    const productId = chosenIndex !== null ? optionIds[chosenIndex - 1] : undefined;
+    if (productId) {
+      const categories = await listCatalog();
+      const product = categories.flatMap((cat) => cat.products).find((p) => p.id === productId);
+      if (product) {
+        forcedSideName = product.name;
+      }
+    }
+  }
+
   // El significado de cada numero sale del mensaje de bienvenida REAL que se le mando: si el
   // negocio escribio uno propio con sus opciones numeradas, se interpreta contra ese texto
   // (sus numeros pueden no coincidir con el menu por defecto); si no, aplica el default.
@@ -2511,6 +2534,8 @@ async function handleTextMessage(
 
   const [intentResult, extractedEntities] = forcedProductName
     ? [{ intent: Intent.ORDER_PRODUCT, confidence: 1 }, { ...EMPTY_ENTITIES, productType: forcedProductName }]
+    : forcedSideName
+    ? [{ intent: Intent.ORDER_PRODUCT, confidence: 1 }, { ...EMPTY_ENTITIES, sides: [forcedSideName] }]
     : shortcutIntent
     ? [{ intent: shortcutIntent, confidence: 1 }, EMPTY_ENTITIES]
     : await Promise.all([
@@ -2885,6 +2910,11 @@ async function handleTextMessage(
       replyText = result.replyText;
       madeProgress = result.madeProgress;
       context.orderFlow = result.nextState;
+      if (result.addOnMenu) {
+        context.pendingMenu = "ADDON";
+        context.pendingCategoryIds = null;
+        context.pendingProductIds = result.addOnMenu;
+      }
       if (!result.orderCreated && JSON.stringify(result.nextState.cart) !== cartBeforeTurn) {
         context.activeCart = null;
       }
@@ -3091,6 +3121,22 @@ function buildNumberedProductsReply(
   return { text, productIds: visible.map((p) => p.id) };
 }
 
+/**
+ * Lista numerada de acompanantes/bebidas disponibles al preguntar ASK_SIDES/ASK_DRINKS,
+ * deterministica (no pasa por la IA) para que la respuesta del cliente ("1", "2"...) se pueda
+ * mapear de forma confiable al producto exacto en el siguiente turno (ver pendingMenu ===
+ * "ADDON" en handleTextMessage). Se agrega DESPUES del texto que arma la IA, sin reemplazarlo.
+ */
+function buildNumberedAddOnReply(
+  items: MatchedProductRef[],
+  currency: string,
+): { text: string; productIds: string[] } | null {
+  if (items.length === 0) return null;
+  const lines = items.map((item, i) => `${i + 1}. ${item.name}: ${formatCurrency(item.price, currency)}`);
+  const text = `${lines.join("\n")}\n\nResponde con el numero si deseas agregar alguno, o "no" si no deseas ninguno.`;
+  return { text, productIds: items.map((item) => item.id) };
+}
+
 async function buildMenuReply(settings: BusinessSettings, pendingQuestion?: string | null): Promise<string> {
   const categories = await listCatalog();
   const facts = categories.flatMap((cat) =>
@@ -3225,6 +3271,8 @@ interface OrderFlowTurnResult {
   nextState: OrderFlowState;
   orderCreated: boolean;
   stateBeforeReset: OrderFlowState;
+  /** IDs (en el mismo orden mostrado) de los acompanantes/bebidas ofrecidos este turno, si los hubo — ver pendingMenu "ADDON". */
+  addOnMenu: string[] | null;
 }
 
 async function runOrderFlowTurn(params: {
@@ -3278,7 +3326,7 @@ async function runOrderFlowTurn(params: {
       businessName: settings.restaurantName,
       tone: settings.assistantTone,
     });
-    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state };
+    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state, addOnMenu: null };
   }
 
   if (productResolution?.status === "MATCHED" && productResolution.product && !productResolution.product.available) {
@@ -3295,7 +3343,7 @@ async function runOrderFlowTurn(params: {
       businessName: settings.restaurantName,
       tone: settings.assistantTone,
     });
-    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state };
+    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state, addOnMenu: null };
   }
 
   // El cliente pide una categoria completa en vez de un producto puntual (ej: "quiero una
@@ -3310,7 +3358,7 @@ async function runOrderFlowTurn(params: {
     const categoryMatch = await findCategoryMatch(text);
     if (categoryMatch) {
       const replyText = await buildCategoryReply(categoryMatch, settings, null);
-      return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state };
+      return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state, addOnMenu: null };
     }
   }
 
@@ -3405,6 +3453,7 @@ async function runOrderFlowTurn(params: {
   const madeProgress = stepChanged || decision.facts.length > 0 || decision.readyToCreateOrder || decision.cancelled;
 
   let replyText: string;
+  let addOnMenu: string[] | null = null;
   if (decision.readyToCreateOrder) {
     // No se manda nada en este punto: el unico mensaje del cierre lo arma handleOrderCreation
     // (pedido creado, total y tiempo estimado). El "Estamos confirmando su pedido..." que
@@ -3433,6 +3482,25 @@ async function runOrderFlowTurn(params: {
     if (decision.nextState.step === OrderFlowStep.CONFIRMING && !decision.cancelled) {
       replyText = `${replyText}\n1. Si, confirmar\n2. No, cancelar`;
     }
+    // Igual que arriba con la confirmacion: se agrega DESPUES de generar, y deterministico
+    // (sin pasar por la IA, que -copiando el formato numerado de mensajes anteriores en el
+    // historial- podia inventar una lista numerada distinta o datos que no venian en los
+    // Hechos, ej: "(1 unidades)" para un acompanante que no tiene esa info). El numero que el
+    // cliente responda en el siguiente turno se interpreta contra ESTA lista (pendingMenu
+    // "ADDON" en handleTextMessage), no contra lo que la IA haya redactado arriba.
+    if (!decision.cancelled && decision.nextState.step === OrderFlowStep.ASK_SIDES) {
+      const numbered = buildNumberedAddOnReply(availableSides, settings.currency);
+      if (numbered) {
+        replyText = `${replyText}\n\n${numbered.text}`;
+        addOnMenu = numbered.productIds;
+      }
+    } else if (!decision.cancelled && decision.nextState.step === OrderFlowStep.ASK_DRINKS) {
+      const numbered = buildNumberedAddOnReply(availableDrinks, settings.currency);
+      if (numbered) {
+        replyText = `${replyText}\n\n${numbered.text}`;
+        addOnMenu = numbered.productIds;
+      }
+    }
   }
 
   return {
@@ -3441,5 +3509,6 @@ async function runOrderFlowTurn(params: {
     nextState: decision.readyToCreateOrder ? initialOrderFlowState : decision.nextState,
     orderCreated: decision.readyToCreateOrder,
     stateBeforeReset: state,
+    addOnMenu,
   };
 }
