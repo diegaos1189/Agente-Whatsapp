@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { API_BASE_URL, ADMIN_API_TOKEN } from "@/lib/apiServer";
 import { SESSION_COOKIE_NAME, decodeSessionPayload } from "@/lib/authConstants";
+import { RESTAURANT_HEADER } from "@/lib/restaurantScope";
 
 /**
  * Proxy generico: el navegador llama a /api/proxy/<ruta> sin token, y este route
@@ -16,6 +17,9 @@ async function forward(request: NextRequest, params: { path: string[] }) {
 
   const hasBody = !["GET", "HEAD", "DELETE"].includes(request.method);
   const body = hasBody ? await request.text() : undefined;
+  // Restaurante sobre el que aplica la llamada (panel /<slug>). La API igual lo valida
+  // contra la base, asi que reenviarlo tal cual no habilita nada por si solo.
+  const restaurantId = request.headers.get(RESTAURANT_HEADER) ?? "";
 
   const res = await fetch(`${API_BASE_URL}${targetPath}${search}`, {
     method: request.method,
@@ -29,6 +33,7 @@ async function forward(request: NextRequest, params: { path: string[] }) {
             "x-admin-permissions": session.permissions.join(","),
           }
         : {}),
+      ...(restaurantId ? { [RESTAURANT_HEADER]: restaurantId } : {}),
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body,

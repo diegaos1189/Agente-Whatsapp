@@ -1,8 +1,18 @@
+import { getActiveRestaurantId, RESTAURANT_HEADER } from "./restaurantScope";
+
 /** Fetch client-side: siempre pasa por /api/proxy, nunca lleva el token directamente. */
 export async function apiClientFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Si el panel abierto es el de un restaurante concreto (/<slug>/...), la llamada va
+  // marcada con el suyo; sin header, la API asume el restaurante local.
+  const restaurantId = getActiveRestaurantId();
+
   const res = await fetch(`/api/proxy${path}`, {
     ...init,
-    headers: init?.body ? { "Content-Type": "application/json", ...init?.headers } : init?.headers,
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(restaurantId ? { [RESTAURANT_HEADER]: restaurantId } : {}),
+      ...init?.headers,
+    },
   });
 
   const contentType = res.headers.get("content-type") ?? "";

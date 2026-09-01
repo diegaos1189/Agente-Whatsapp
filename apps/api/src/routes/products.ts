@@ -10,6 +10,7 @@ import {
   invalidateCatalogCache,
 } from "../modules/products/productService.js";
 import { invalidateBusinessSettingsCache } from "../modules/business/businessHoursService.js";
+import { resolveRestaurantId } from "../modules/platform/restaurantContext.js";
 
 const comboItemSchema = z.object({ productId: z.string(), quantity: z.number().int().positive() });
 
@@ -102,16 +103,17 @@ export async function productRoutes(app: FastifyInstance) {
   // pero este endpoint fuerza el refresco y confirma al admin que el agente quedo al dia.
   app.post("/api/agent/refresh", async (request) => {
     requirePermission(request, "products");
-    invalidateCatalogCache();
-    invalidateBusinessSettingsCache();
-    const categories = await listCatalog();
+    const restaurantId = await resolveRestaurantId(request);
+    invalidateCatalogCache(restaurantId);
+    invalidateBusinessSettingsCache(restaurantId);
+    const categories = await listCatalog(restaurantId);
     const productsCount = categories.reduce((acc, c) => acc + c.products.length, 0);
     return { ok: true, categoriesCount: categories.length, productsCount };
   });
 
   app.get("/api/products", async (request) => {
     requireAnyPermission(request, ["products", "promotions", "orders", "conversations"]);
-    return listCatalog();
+    return listCatalog(await resolveRestaurantId(request));
   });
 
   app.get("/api/promotions", async (request) => {
@@ -126,20 +128,25 @@ export async function productRoutes(app: FastifyInstance) {
 
   app.get("/api/categories", async (request) => {
     requireAnyPermission(request, ["products", "promotions", "orders", "conversations"]);
-    return prisma.category.findMany({ orderBy: { sortOrder: "asc" } });
+    const restaurantId = await resolveRestaurantId(request);
+    return prisma.category.findMany({ where: { restaurantId }, orderBy: { sortOrder: "asc" } });
   });
 
   app.post("/api/categories", async (request, reply) => {
     requirePermission(request, "products");
     const body = categoryCreateSchema.parse(request.body);
-    const existing = await prisma.category.findUnique({ where: { slug: body.slug } });
+    const restaurantId = await resolveRestaurantId(request);
+    // El slug es unico POR restaurante: dos negocios pueden tener ambos "bebidas".
+    const existing = await prisma.category.findFirst({ where: { restaurantId, slug: body.slug } });
     if (existing) return reply.status(409).send({ error: "Ya existe una categoria con ese slug" });
     if (body.parentCategoryId) {
-      const parent = await prisma.category.findUnique({ where: { id: body.parentCategoryId } });
+      // findFirst acotado y no findUnique: una categoria padre de OTRO restaurante tiene que
+      // leerse como inexistente, no como valida.
+      const parent = await prisma.category.findFirst({ where: { id: body.parentCategoryId, restaurantId } });
       if (!parent) return reply.status(400).send({ error: "La categoria padre indicada no existe" });
     }
-    const category = await prisma.category.create({ data: body });
-    invalidateCatalogCache();
+    const category = await prisma.category.create({ data: { ...body, restaurantId } });
+    invalidateCatalogCache(restaurantId);
     return category;
   });
 
@@ -147,25 +154,27 @@ export async function productRoutes(app: FastifyInstance) {
     requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = categoryUpdateSchema.parse(request.body);
-    const category = await prisma.category.findUnique({ where: { id } });
+    const restaurantId = await resolveRestaurantId(request);
+    const category = await prisma.category.findFirst({ where: { id, restaurantId } });
     if (!category) return reply.status(404).send({ error: "Categoria no encontrada" });
     if (body.parentCategoryId) {
       if (body.parentCategoryId === id) {
         return reply.status(400).send({ error: "Una categoria no puede ser su propia categoria padre" });
       }
-      const parent = await prisma.category.findUnique({ where: { id: body.parentCategoryId } });
+      const parent = await prisma.category.findFirst({ where: { id: body.parentCategoryId, restaurantId } });
       if (!parent) return reply.status(400).send({ error: "La categoria padre indicada no existe" });
     }
 
     const updated = await prisma.category.update({ where: { id }, data: body });
-    invalidateCatalogCache();
+    invalidateCatalogCache(restaurantId);
     return updated;
   });
 
   app.delete("/api/categories/:id", async (request, reply) => {
     requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const category = await prisma.category.findUnique({ where: { id } });
+    const restaurantId = await resolveRestaurantId(request);
+    const category = await prisma.category.findFirst({ where: { id, restaurantId } });
     if (!category) return reply.status(404).send({ error: "Categoria no encontrada" });
 
     const productCount = await prisma.product.count({ where: { categoryId: id } });
@@ -182,15 +191,20 @@ export async function productRoutes(app: FastifyInstance) {
     }
 
     await prisma.category.delete({ where: { id } });
-    invalidateCatalogCache();
+    invalidateCatalogCache(restaurantId);
     return { ok: true };
   });
 
-  app.post("/api/products", async (request) => {
+  app.post("/api/products", async (request, reply) => {
     requirePermission(request, "products");
     const body = productCreateSchema.parse(request.body);
-    const product = await prisma.product.create({ data: body });
-    invalidateCatalogCache();
+    const restaurantId = await resolveRestaurantId(request);
+    // La categoria tiene que ser del mismo restaurante: si no, un categoryId ajeno colgaria
+    // el producto del catalogo de otro negocio.
+    const category = await prisma.category.findFirst({ where: { id: body.categoryId, restaurantId } });
+    if (!category) return reply.status(400).send({ error: "La categoria indicada no existe" });
+    const product = await prisma.product.create({ data: { ...body, restaurantId } });
+    invalidateCatalogCache(restaurantId);
     return product;
   });
 
@@ -198,23 +212,25 @@ export async function productRoutes(app: FastifyInstance) {
     requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = productUpdateSchema.parse(request.body);
+    const restaurantId = await resolveRestaurantId(request);
 
-    const product = await prisma.product.findUnique({ where: { id } });
+    const product = await prisma.product.findFirst({ where: { id, restaurantId } });
     if (!product) return reply.status(404).send({ error: "Producto no encontrado" });
     if (body.categoryId) {
-      const category = await prisma.category.findUnique({ where: { id: body.categoryId } });
+      const category = await prisma.category.findFirst({ where: { id: body.categoryId, restaurantId } });
       if (!category) return reply.status(400).send({ error: "La categoria indicada no existe" });
     }
 
     const updated = await prisma.product.update({ where: { id }, data: body });
-    invalidateCatalogCache();
+    invalidateCatalogCache(restaurantId);
     return updated;
   });
 
   app.delete("/api/products/:id", async (request, reply) => {
     requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const product = await prisma.product.findUnique({ where: { id } });
+    const restaurantId = await resolveRestaurantId(request);
+    const product = await prisma.product.findFirst({ where: { id, restaurantId } });
     if (!product) return reply.status(404).send({ error: "Producto no encontrado" });
 
     try {
@@ -231,7 +247,7 @@ export async function productRoutes(app: FastifyInstance) {
       throw error;
     }
 
-    invalidateCatalogCache();
+    invalidateCatalogCache(restaurantId);
     return { ok: true };
   });
 

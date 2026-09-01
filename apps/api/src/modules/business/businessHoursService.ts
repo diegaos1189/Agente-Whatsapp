@@ -1,12 +1,15 @@
 import { prisma } from "../../db/prisma.js";
 import type { BusinessSettingsDTO, TransferAccountDTO } from "@pollos/shared";
+import { LOCAL_RESTAURANT_ID } from "../platform/restaurantContext.js";
 
 const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 type WeekdayKey = (typeof WEEKDAY_KEYS)[number];
 
 export type OpeningHours = Partial<Record<WeekdayKey, { open: string; close: string } | null>>;
 
-let settingsCache: { value: BusinessSettingsDTO; expiresAt: number } | null = null;
+// Cache por restaurante: con una sola entrada global, el panel de un negocio devolveria
+// la configuracion de otro durante los 30s de TTL.
+const settingsCache = new Map<string, { value: BusinessSettingsDTO; expiresAt: number }>();
 const CACHE_TTL_MS = 30_000;
 
 function toDTO(row: any): BusinessSettingsDTO {
@@ -55,23 +58,31 @@ function toDTO(row: any): BusinessSettingsDTO {
 }
 
 /** Lee la configuracion del negocio (fila unica) con cache corta en memoria. */
-export async function getBusinessSettings(): Promise<BusinessSettingsDTO> {
-  if (settingsCache && settingsCache.expiresAt > Date.now()) {
-    return settingsCache.value;
+/**
+ * Configuracion del negocio. El restaurante es explicito desde el multi-tenant; se deja con
+ * valor por defecto porque el bot de WhatsApp todavia no sabe a que restaurante corresponde
+ * cada numero (eso llega con el ruteo por numero), y hasta entonces atiende al local.
+ */
+export async function getBusinessSettings(restaurantId: string = LOCAL_RESTAURANT_ID): Promise<BusinessSettingsDTO> {
+  const cached = settingsCache.get(restaurantId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
   }
 
-  const row = await prisma.businessSettings.findFirst();
+  const row = await prisma.businessSettings.findUnique({ where: { restaurantId } });
   if (!row) {
-    throw new Error("business_settings no tiene ninguna fila. Corre el seed: npm run prisma:seed");
+    throw new Error(`business_settings no tiene fila para el restaurante ${restaurantId}. Corre el seed: npm run prisma:seed`);
   }
 
   const dto = toDTO(row);
-  settingsCache = { value: dto, expiresAt: Date.now() + CACHE_TTL_MS };
+  settingsCache.set(restaurantId, { value: dto, expiresAt: Date.now() + CACHE_TTL_MS });
   return dto;
 }
 
-export function invalidateBusinessSettingsCache(): void {
-  settingsCache = null;
+/** Sin argumento limpia la cache de todos los restaurantes (util en tests y al arrancar). */
+export function invalidateBusinessSettingsCache(restaurantId?: string): void {
+  if (restaurantId) settingsCache.delete(restaurantId);
+  else settingsCache.clear();
 }
 
 function getNowInTimezone(timezone: string, at: Date): { weekday: WeekdayKey; hhmm: string } {

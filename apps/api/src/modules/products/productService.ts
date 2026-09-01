@@ -3,9 +3,11 @@ import type { CategoryDTO, ComboItemDTO, ProductDTO, PromotionDTO } from "@pollo
 import { normalizeText } from "../../utils/text.js";
 import { logger } from "../../utils/logger.js";
 import { deriveLocalizedAliasVariants, normalizeLocalizedText } from "../localization/localeService.js";
+import { LOCAL_RESTAURANT_ID } from "../platform/restaurantContext.js";
 
 const CACHE_TTL_MS = 30_000;
-let catalogCache: { value: CategoryDTO[]; expiresAt: number } | null = null;
+// Cache por restaurante: una sola entrada global le serviria a un negocio el catalogo de otro.
+const catalogCache = new Map<string, { value: CategoryDTO[]; expiresAt: number }>();
 
 export type ProductResolutionStatus = "MATCHED" | "AMBIGUOUS" | "NOT_FOUND";
 export type ProductMatchSource =
@@ -114,9 +116,10 @@ function productToDTO(
   };
 }
 
-async function fetchCatalog(): Promise<CategoryDTO[]> {
+async function fetchCatalog(restaurantId: string): Promise<CategoryDTO[]> {
   const [categories, allProducts] = await Promise.all([
     prisma.category.findMany({
+      where: { restaurantId },
       orderBy: { sortOrder: "asc" },
       include: {
         products: {
@@ -125,7 +128,7 @@ async function fetchCatalog(): Promise<CategoryDTO[]> {
         },
       },
     }),
-    prisma.product.findMany({ select: { id: true, name: true } }),
+    prisma.product.findMany({ where: { restaurantId }, select: { id: true, name: true } }),
   ]);
   const nameById = new Map(allProducts.map((p) => [p.id, p.name]));
 
@@ -139,9 +142,10 @@ async function fetchCatalog(): Promise<CategoryDTO[]> {
   }));
 }
 
-export async function listAllProductsForResolution(): Promise<ProductDTO[]> {
+export async function listAllProductsForResolution(restaurantId: string = LOCAL_RESTAURANT_ID): Promise<ProductDTO[]> {
   const [products, allProducts] = await Promise.all([
     prisma.product.findMany({
+      where: { restaurantId },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
       include: {
         category: {
@@ -149,7 +153,7 @@ export async function listAllProductsForResolution(): Promise<ProductDTO[]> {
         },
       },
     }),
-    prisma.product.findMany({ select: { id: true, name: true } }),
+    prisma.product.findMany({ where: { restaurantId }, select: { id: true, name: true } }),
   ]);
   const nameById = new Map(allProducts.map((product) => [product.id, product.name]));
   return products.map((product) => productToDTO(product, product.category.name, nameById));
@@ -161,18 +165,21 @@ export async function listAllProductsForResolution(): Promise<ProductDTO[]> {
  * varias queries identicas a la DB por cada mensaje de WhatsApp. Se invalida apenas
  * el panel admin crea/edita/borra un producto o categoria (ver invalidateCatalogCache).
  */
-export async function listCatalog(): Promise<CategoryDTO[]> {
-  if (catalogCache && catalogCache.expiresAt > Date.now()) {
-    return catalogCache.value;
+export async function listCatalog(restaurantId: string = LOCAL_RESTAURANT_ID): Promise<CategoryDTO[]> {
+  const cached = catalogCache.get(restaurantId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
   }
 
-  const value = await fetchCatalog();
-  catalogCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  const value = await fetchCatalog(restaurantId);
+  catalogCache.set(restaurantId, { value, expiresAt: Date.now() + CACHE_TTL_MS });
   return value;
 }
 
-export function invalidateCatalogCache(): void {
-  catalogCache = null;
+/** Sin argumento limpia la cache de todos los restaurantes (util en tests y al arrancar). */
+export function invalidateCatalogCache(restaurantId?: string): void {
+  if (restaurantId) catalogCache.delete(restaurantId);
+  else catalogCache.clear();
 }
 
 function parseDaysOfWeek(raw: unknown): number[] {

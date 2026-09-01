@@ -61,7 +61,37 @@ Ver `apps/api/prisma/schema.prisma`. Decisiones relevantes:
 
 - **Montos en enteros** (COP no usa decimales en la practica). `price`, `total`, `deliveryFee` son `Int`.
 - `orders.status` es un string libre validado por el enum compartido `OrderStatus`, no un enum nativo de Postgres, para poder agregar estados sin migracion destructiva.
-- `business_settings` es una tabla de una sola fila (singleton) con toda la configuracion editable desde el panel: horario (`openingHours` JSON por dia), costo de domicilio, tiempo estimado, mensajes de bienvenida/fuera de horario. Nada de esto esta hardcodeado en el codigo del agente.
+- `business_settings` tiene una fila por restaurante (`restaurantId` unico) con toda la configuracion editable desde el panel: horario (`openingHours` JSON por dia), costo de domicilio, tiempo estimado, mensajes de bienvenida/fuera de horario. Nada de esto esta hardcodeado en el codigo del agente.
+
+## Multi-tenant (en curso, por fases)
+
+El sistema nacio single-tenant: una base de datos por cliente, un deployment por restaurante.
+`platform_restaurants` era solo un directorio de clientes. Se esta migrando a que una sola base
+atienda a varios restaurantes, por fases, para no mover las ~220 queries de golpe.
+
+**Como se resuelve el restaurante de un request** (`modules/platform/restaurantContext.ts`):
+el panel manda el header `x-restaurant-id` cuando el usuario abre `/<slug>/...`; sin header se
+asume `local-deployment`, el restaurante que ya corria en este deployment. Ese default es lo que
+mantiene funcionando sin cambios el panel de siempre (`/products`, `/settings`) y el bot de
+WhatsApp, que todavia no sabe a que restaurante corresponde cada numero.
+
+| Fase | Alcance | Estado |
+| --- | --- | --- |
+| 1 | `business_settings`, `categories`, `products` acotados por `restaurantId`. Panel `/<slug>/products` y `/<slug>/settings`. | Hecho |
+| 2 | Pedidos y cocina (`orders`, `order_items`, `payments`). | Pendiente |
+| 3 | Conversaciones, contactos y ruteo del webhook por numero de WhatsApp -> restaurante. | Pendiente |
+| 4 | Usuarios y sesion atada a un restaurante (hoy el panel `/<slug>` es solo ADMIN de la plataforma). | Pendiente |
+
+Consecuencias mientras las fases 2-4 no esten:
+
+- En el panel `/<slug>` solo Productos y Configuracion son links reales; las demas secciones se
+  muestran marcadas como "Pronto" a proposito, porque sus datos siguen siendo los del
+  restaurante local y linkearlas mostraria pedidos y conversaciones de otro negocio.
+- `promotions` y `product_recommendations` cuelgan de productos pero todavia no tienen
+  `restaurantId` propio: no estan expuestas en el panel por restaurante.
+- El bot atiende unicamente al restaurante local, sin importar cuantos haya dados de alta.
+- Las caches de catalogo y configuracion estan indexadas por restaurante (`Map`), no globales:
+  con una sola entrada, un negocio veria los datos de otro durante los 30s de TTL.
 
 ## Simplificaciones conocidas del MVP (documentadas, no accidentales)
 

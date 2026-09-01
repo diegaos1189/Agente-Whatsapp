@@ -141,8 +141,12 @@ model ContactMessageProcessingLease {
 
 model Category {
   id        String    @id @default(cuid())
+  /// Restaurante dueño de esta categoria. El catalogo esta aislado por restaurante: dos
+  /// negocios distintos pueden tener ambos una categoria "bebidas" sin pisarse.
+  restaurantId String
+  restaurant   PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   name      String
-  slug      String    @unique
+  slug      String
   sortOrder Int       @default(0)
   parentCategoryId String?
   parent    Category? @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id])
@@ -150,11 +154,17 @@ model Category {
   products  Product[]
   recommendationRules ProductRecommendation[]
 
+  @@unique([restaurantId, slug])
+  @@index([restaurantId])
   @@map("categories")
 }
 
 model Product {
   id          String   @id @default(cuid())
+  /// Restaurante dueño del producto. Se guarda aqui ademas de en la categoria para poder
+  /// acotar por restaurante sin join, y para detectar un categoryId de otro restaurante.
+  restaurantId String
+  restaurant   PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   categoryId  String
   category    Category @relation(fields: [categoryId], references: [id])
   name        String
@@ -191,6 +201,7 @@ model Product {
   recommendationsAsSource     ProductRecommendation[] @relation("RecommendationSourceProduct")
   recommendationsAsRecommended ProductRecommendation[] @relation("RecommendationRecommendedProduct")
 
+  @@index([restaurantId])
   @@map("products")
 }
 
@@ -473,6 +484,9 @@ model ConversationAuditEvent {
 
 model BusinessSettings {
   id                     String   @id @default(cuid())
+  /// Restaurante al que pertenece esta configuracion: exactamente una fila por restaurante.
+  restaurantId           String   @unique
+  restaurant             PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   restaurantName         String
   /// Logo del negocio (data URL base64) para mostrar en el panel admin, arriba del menu.
   logoUrl                String?
@@ -607,6 +621,10 @@ model PlatformRestaurant {
   status     String   @default("ACTIVE") // "ACTIVE" | "INACTIVE"
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  settings   BusinessSettings?
+  categories Category[]
+  products   Product[]
 
   @@map("platform_restaurants")
 }

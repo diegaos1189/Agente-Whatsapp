@@ -39,4 +39,19 @@ export async function apiServerFetch<T>(path: string, init?: RequestInit): Promi
   return res.json() as Promise<T>;
 }
 
+/**
+ * Igual que apiServerFetch pero acotado a un restaurante concreto — lo usan las paginas
+ * del panel /<slug>. Sin este header la API responde con los datos del restaurante local.
+ */
+export async function apiServerFetchForRestaurant<T>(
+  path: string,
+  restaurantId: string,
+  init?: RequestInit,
+): Promise<T> {
+  return apiServerFetch<T>(path, {
+    ...init,
+    headers: { "x-restaurant-id": restaurantId, ...init?.headers },
+  });
+}
+
 export { API_BASE_URL, ADMIN_API_TOKEN };

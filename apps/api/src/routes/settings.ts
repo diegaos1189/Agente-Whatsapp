@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdmin, requireAuthenticated } from "../modules/adminUsers/adminAuth.js";
 import { prisma } from "../db/prisma.js";
 import { getBusinessSettings, invalidateBusinessSettingsCache } from "../modules/business/businessHoursService.js";
+import { resolveRestaurantId } from "../modules/platform/restaurantContext.js";
 
 const openingHoursDaySchema = z.object({ open: z.string(), close: z.string() }).nullable();
 
@@ -96,7 +97,7 @@ export async function settingsRoutes(app: FastifyInstance) {
 
   app.get("/api/settings", async (request) => {
     requireAuthenticated(request);
-    const settings = await getBusinessSettings();
+    const settings = await getBusinessSettings(await resolveRestaurantId(request));
     return {
       ...settings,
       whatsappToken: maskSecret(settings.whatsappToken),
@@ -113,7 +114,8 @@ export async function settingsRoutes(app: FastifyInstance) {
     if (isUnchangedMask(body.whatsappAppSecret) || body.whatsappAppSecret === "") delete body.whatsappAppSecret;
     if (isUnchangedMask(body.whatsappVerifyToken) || body.whatsappVerifyToken === "") delete body.whatsappVerifyToken;
 
-    const current = await prisma.businessSettings.findFirst();
+    const restaurantId = await resolveRestaurantId(request);
+    const current = await prisma.businessSettings.findUnique({ where: { restaurantId } });
 
     const updated = current
       ? await prisma.businessSettings.update({
@@ -122,6 +124,7 @@ export async function settingsRoutes(app: FastifyInstance) {
         })
       : await prisma.businessSettings.create({
           data: {
+            restaurantId,
             restaurantName: body.restaurantName ?? "Mi Restaurante",
             phone: body.phone ?? "",
             address: body.address ?? "",
@@ -132,7 +135,7 @@ export async function settingsRoutes(app: FastifyInstance) {
           },
         });
 
-    invalidateBusinessSettingsCache();
+    invalidateBusinessSettingsCache(restaurantId);
     // Igual que en el GET: los secretos nunca vuelven completos al panel, ni siquiera
     // en la respuesta del update (la fila cruda de Prisma los trae sin enmascarar).
     return {
