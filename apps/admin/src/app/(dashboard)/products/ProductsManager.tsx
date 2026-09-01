@@ -7,7 +7,7 @@ import { ProductModal } from "./ProductModal";
 
 export function ProductsManager({ categories, allProducts }: { categories: CategoryDTO[]; allProducts: ProductDTO[] }) {
   const [tab, setTab] = useState<string>("ALL");
-  const [modal, setModal] = useState<{ mode: "create" } | { mode: "edit"; product: ProductDTO } | null>(null);
+  const [modal, setModal] = useState<{ mode: "create"; categoryId: string } | { mode: "edit"; product: ProductDTO } | null>(null);
 
   const visibleProducts = tab === "ALL" ? allProducts : allProducts.filter((p) => p.categoryId === tab);
   const categoryOptions = categories.map((c) => ({ id: c.id, name: c.name }));
@@ -27,7 +27,7 @@ export function ProductsManager({ categories, allProducts }: { categories: Categ
             ))}
           </div>
         )}
-        <button type="button" className="cta" onClick={() => setModal({ mode: "create" })} disabled={categories.length === 0}>
+        <button type="button" className="cta" onClick={() => setModal({ mode: "create", categoryId: tab === "ALL" ? (categories[0]?.id ?? "") : tab })} disabled={categories.length === 0}>
           + Nuevo producto
         </button>
       </div>
@@ -64,6 +64,7 @@ export function ProductsManager({ categories, allProducts }: { categories: Categ
         <ProductModal
           mode={modal.mode}
           product={modal.mode === "edit" ? modal.product : undefined}
+          defaultCategoryId={modal.mode === "create" ? modal.categoryId : undefined}
           categories={categoryOptions}
           allProducts={allProducts}
           onClose={() => setModal(null)}
