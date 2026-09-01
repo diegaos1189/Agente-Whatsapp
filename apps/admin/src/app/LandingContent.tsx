@@ -1,4 +1,7 @@
+import "./landing.css";
+import { LandingNav } from "./LandingNav";
 import { LeadForm } from "./LeadForm";
+import { Reveal } from "./Reveal";
 
 const PRODUCT_NAME = "Pedix";
 const WHATSAPP_NUMBER = "573015625504";
@@ -6,67 +9,103 @@ const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponen
   `Hola, quiero una demo de ${PRODUCT_NAME} para mi negocio`,
 )}`;
 
+const ICONS: Record<string, JSX.Element> = {
+  chat: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  ),
+  spark: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" />
+    </svg>
+  ),
+  inbox: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z" />
+    </svg>
+  ),
+  bolt: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />
+    </svg>
+  ),
+  screen: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  ),
+  grid: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  ),
+  card: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <rect x="2" y="5" width="20" height="14" rx="2.5" />
+      <path d="M2 10h20" />
+    </svg>
+  ),
+  cart: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <circle cx="9" cy="21" r="1" />
+      <circle cx="20" cy="21" r="1" />
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+    </svg>
+  ),
+  target: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1" />
+    </svg>
+  ),
+  chart: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-5 3 3 5-7" />
+    </svg>
+  ),
+  shield: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20">
+      <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z" />
+    </svg>
+  ),
+};
+
 const FEATURE_GROUPS: Array<{
   title: string;
-  items: Array<{ title: string; text: string }>;
+  items: Array<{ title: string; text: string; icon: keyof typeof ICONS }>;
 }> = [
   {
     title: "Atención al cliente",
     items: [
-      {
-        title: "Agente de WhatsApp con IA",
-        text: "Responde pedidos, dudas del menú y horarios 24/7, con el tono de tu negocio.",
-      },
-      {
-        title: "Recomendaciones y upsell",
-        text: "El agente sugiere combos y acompañantes en el momento justo, sin ser invasivo.",
-      },
-      {
-        title: "CRM de conversaciones",
-        text: "Bandeja tipo WhatsApp con historial completo por cliente y traspaso a un humano cuando hace falta.",
-      },
+      { title: "Agente de WhatsApp con IA", text: "Responde pedidos, dudas del menú y horarios 24/7, con el tono de tu negocio.", icon: "chat" },
+      { title: "Recomendaciones y upsell", text: "El agente sugiere combos y acompañantes en el momento justo, sin ser invasivo.", icon: "spark" },
+      { title: "CRM de conversaciones", text: "Bandeja tipo WhatsApp con historial completo por cliente y traspaso a un humano cuando hace falta.", icon: "inbox" },
     ],
   },
   {
     title: "Operación",
     items: [
-      {
-        title: "Gestión de pedidos en tiempo real",
-        text: "Estados de pago, cocina, despacho y entrega, con alertas cuando un pedido se atasca.",
-      },
-      {
-        title: "Pantalla de cocina",
-        text: "Vista dedicada para el equipo de cocina: pedidos entrantes y un clic para marcar listo.",
-      },
-      {
-        title: "Catálogo y combos",
-        text: "Categorías, productos, modificadores y precios, editables sin tocar código.",
-      },
-      {
-        title: "Cobros y conciliación",
-        text: "Efectivo, transferencia y tarjeta, con seguimiento de pagos, reembolsos y saldos pendientes.",
-      },
+      { title: "Gestión de pedidos en tiempo real", text: "Estados de pago, cocina, despacho y entrega, con alertas cuando un pedido se atasca.", icon: "bolt" },
+      { title: "Pantalla de cocina", text: "Vista dedicada para el equipo de cocina: pedidos entrantes y un clic para marcar listo.", icon: "screen" },
+      { title: "Catálogo y combos", text: "Categorías, productos, modificadores y precios, editables sin tocar código.", icon: "grid" },
+      { title: "Cobros y conciliación", text: "Efectivo, transferencia y tarjeta, con seguimiento de pagos, reembolsos y saldos pendientes.", icon: "card" },
     ],
   },
   {
     title: "Crecimiento",
     items: [
-      {
-        title: "Recuperación de carritos",
-        text: "Si un cliente arma un pedido y no lo termina, el agente le escribe para retomarlo.",
-      },
-      {
-        title: "Campañas de reactivación",
-        text: "Detecta clientes que dejaron de pedir y les manda una campaña automática por WhatsApp.",
-      },
-      {
-        title: "Métricas y analítica",
-        text: "Ventas, productos más vendidos, horas pico, segmentación de clientes y tiempos de operación.",
-      },
-      {
-        title: "Roles y permisos por equipo",
-        text: "Cocina, ventas y administración, cada quien con acceso solo a lo que necesita.",
-      },
+      { title: "Recuperación de carritos", text: "Si un cliente arma un pedido y no lo termina, el agente le escribe para retomarlo.", icon: "cart" },
+      { title: "Campañas de reactivación", text: "Detecta clientes que dejaron de pedir y les manda una campaña automática por WhatsApp.", icon: "target" },
+      { title: "Métricas y analítica", text: "Ventas, productos más vendidos, horas pico, segmentación de clientes y tiempos de operación.", icon: "chart" },
+      { title: "Roles y permisos por equipo", text: "Cocina, ventas y administración, cada quien con acceso solo a lo que necesita.", icon: "shield" },
     ],
   },
 ];
@@ -77,146 +116,80 @@ const STEPS = [
   { step: "3", title: "Empieza a vender", text: "El agente atiende, cobra y organiza — tú ves todo desde un solo panel." },
 ];
 
+const TRUST_ITEMS = ["Configuración en minutos", "Sin permanencia forzada", "Soporte directo por WhatsApp"];
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
 export function LandingContent() {
   return (
-    <div style={{ background: "#ffffff", color: "#252527", minHeight: "100vh" }}>
-      {/* Navbar */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "18px 32px",
-          borderBottom: "1px solid rgba(0,0,0,0.06)",
-        }}
-      >
-        <span style={{ fontWeight: 800, fontSize: "1.25rem", color: "#2a8f17" }}>{PRODUCT_NAME}</span>
-        <a
-          href={WHATSAPP_LINK}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
-            color: "#fff",
-            fontWeight: 700,
-            fontSize: 14,
-            padding: "10px 20px",
-            borderRadius: 999,
-            textDecoration: "none",
-            boxShadow: "0 4px 14px rgba(49,167,27,0.35)",
-          }}
-        >
-          Escríbenos por WhatsApp
-        </a>
-      </header>
+    <div className="lp">
+      <div className="lp-mesh" />
+      <LandingNav whatsappLink={WHATSAPP_LINK} />
 
       {/* Hero */}
-      <section
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: 48,
-          padding: "64px 32px",
-          maxWidth: 1100,
-          margin: "0 auto",
-        }}
-      >
-        <div style={{ flex: "1 1 420px", minWidth: 300 }}>
-          <span
-            style={{
-              display: "inline-block",
-              background: "#eaf6e8",
-              color: "#2a8f17",
-              fontSize: 12,
-              fontWeight: 700,
-              padding: "5px 12px",
-              borderRadius: 999,
-              marginBottom: 18,
-            }}
-          >
+      <section className="lp-hero">
+        <div className="lp-hero-copy">
+          <span className="lp-badge">
+            <span className="lp-badge-dot" />
             Agente de WhatsApp + CRM + POS
           </span>
-          <h1 style={{ fontSize: "2.5rem", lineHeight: 1.15, margin: "0 0 16px", fontWeight: 800 }}>
-            El agente de WhatsApp con IA que atiende, vende y organiza tu negocio de comida
+          <h1 className="lp-h1">
+            El agente de WhatsApp con IA que{" "}
+            <span className="lp-h1-gradient">atiende, vende y organiza</span> tu negocio de comida
           </h1>
-          <p style={{ color: "#4d4c52", fontSize: "1.0625rem", lineHeight: 1.6, margin: "0 0 28px", maxWidth: 460 }}>
+          <p className="lp-sub">
             {PRODUCT_NAME} conecta tu WhatsApp con inteligencia artificial: toma pedidos, cobra, avisa a cocina y te
             muestra todo en un panel — para restaurantes, pizzerías, hamburgueserías y negocios de comida similares.
           </p>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <a
-              href={WHATSAPP_LINK}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 15,
-                padding: "13px 26px",
-                borderRadius: 999,
-                textDecoration: "none",
-                boxShadow: "0 4px 14px rgba(49,167,27,0.35)",
-              }}
-            >
-              Escríbenos por WhatsApp
-            </a>
-            <a
-              href="#contacto"
-              style={{
-                border: "1.5px solid #31a71b",
-                color: "#2a8f17",
-                fontWeight: 700,
-                fontSize: 15,
-                padding: "12px 26px",
-                borderRadius: 999,
-                textDecoration: "none",
-              }}
-            >
+          <div className="lp-cta-row">
+            <span className="lp-pulse-wrap">
+              <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="lp-btn lp-btn-primary">
+                <span>Escríbenos por WhatsApp</span>
+              </a>
+            </span>
+            <a href="#contacto" className="lp-btn lp-btn-ghost">
               Déjanos tus datos
             </a>
+          </div>
+          <div className="lp-trust">
+            {TRUST_ITEMS.map((item) => (
+              <span key={item}>
+                <CheckIcon />
+                {item}
+              </span>
+            ))}
           </div>
         </div>
 
         {/* Phone mockup */}
-        <div style={{ flex: "1 1 320px", minWidth: 280, display: "flex", justifyContent: "center" }}>
+        <div className="lp-phone-stage">
           <div style={{ position: "relative" }}>
-            <div
-              style={{
-                position: "absolute",
-                inset: "10% -10% -10% 10%",
-                background: "radial-gradient(circle, #31a71b 0%, rgba(49,167,27,0) 70%)",
-                opacity: 0.25,
-                zIndex: 0,
-              }}
-            />
-            <div
-              style={{
-                position: "relative",
-                zIndex: 1,
-                width: 280,
-                background: "#0b0d0a",
-                borderRadius: 32,
-                padding: 10,
-                boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
-              }}
-            >
-              <div style={{ background: "#e5ddd5", borderRadius: 22, padding: 14, minHeight: 380, display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ background: "#075e54", margin: "-14px -14px 8px", padding: "10px 14px", borderRadius: "22px 22px 0 0", color: "#fff", fontSize: 13, fontWeight: 700 }}>
+            <div className="lp-phone-glow" />
+            <div className="lp-phone">
+              <div className="lp-phone-screen">
+                <div className="lp-phone-bar">
+                  <span className="lp-phone-bar-dot" />
                   Tu negocio
                 </div>
-                <div style={{ alignSelf: "flex-start", background: "#fff", borderRadius: 8, borderTopLeftRadius: 0, padding: "7px 10px", fontSize: 12.5, maxWidth: "85%" }}>
+                <div className="lp-bubble lp-bubble-in-msg" style={{ animationDelay: "0.2s" }}>
                   Hola, quiero un pedido para hoy 🙂
                 </div>
-                <div style={{ alignSelf: "flex-end", background: "#d9fdd3", borderRadius: 8, borderTopRightRadius: 0, padding: "7px 10px", fontSize: 12.5, maxWidth: "85%" }}>
+                <div className="lp-bubble lp-bubble-out" style={{ animationDelay: "0.9s" }}>
                   ¡Claro! Este es nuestro menú del día, ¿qué te provoca?
                 </div>
-                <div style={{ alignSelf: "flex-start", background: "#fff", borderRadius: 8, borderTopLeftRadius: 0, padding: "7px 10px", fontSize: 12.5, maxWidth: "85%" }}>
+                <div className="lp-bubble lp-bubble-in-msg" style={{ animationDelay: "1.6s" }}>
                   Deme el combo familiar
                 </div>
-                <div style={{ alignSelf: "flex-end", background: "#d9fdd3", borderRadius: 8, borderTopRightRadius: 0, padding: "7px 10px", fontSize: 12.5, maxWidth: "85%" }}>
-                  Listo 👌 ¿Domicilio o recoges en el local?
+                <div className="lp-typing" style={{ animationDelay: "2.3s" }}>
+                  <span />
+                  <span />
+                  <span />
                 </div>
               </div>
             </div>
@@ -225,116 +198,68 @@ export function LandingContent() {
       </section>
 
       {/* Servicios */}
-      <section id="servicios" style={{ background: "#fffbec", padding: "56px 32px" }}>
-        <h2 style={{ textAlign: "center", fontSize: "1.75rem", fontWeight: 800, margin: "0 0 8px" }}>
-          Todo lo que necesita tu negocio, en un solo lugar
-        </h2>
-        <p style={{ textAlign: "center", color: "#4d4c52", margin: "0 0 40px" }}>
-          {PRODUCT_NAME} no es solo un chatbot — es la plataforma completa detrás del pedido.
-        </p>
-        <div style={{ maxWidth: 1000, margin: "0 auto", display: "flex", flexDirection: "column", gap: 40 }}>
-          {FEATURE_GROUPS.map((group) => (
-            <div key={group.title}>
-              <h3 style={{ fontSize: "1.0625rem", fontWeight: 800, color: "#2a8f17", margin: "0 0 16px" }}>
-                {group.title}
-              </h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-                {group.items.map((item) => (
-                  <div
-                    key={item.title}
-                    style={{
-                      background: "#ffffff",
-                      borderRadius: 14,
-                      padding: 20,
-                      border: "1px solid rgba(0,0,0,0.06)",
-                    }}
-                  >
-                    <h4 style={{ fontSize: 14.5, fontWeight: 700, margin: "0 0 6px" }}>{item.title}</h4>
-                    <p style={{ color: "#4d4c52", fontSize: 13.5, margin: 0, lineHeight: 1.5 }}>{item.text}</p>
-                  </div>
-                ))}
-              </div>
+      <section id="servicios" className="lp-section lp-section-light">
+        <Reveal>
+          <h2 className="lp-section-title">Todo lo que necesita tu negocio, en un solo lugar</h2>
+          <p className="lp-section-sub">{PRODUCT_NAME} no es solo un chatbot — es la plataforma completa detrás del pedido.</p>
+        </Reveal>
+        {FEATURE_GROUPS.map((group, gi) => (
+          <Reveal key={group.title} delay={gi * 80} className="lp-group">
+            <h3 className="lp-group-title">{group.title}</h3>
+            <div className="lp-card-grid">
+              {group.items.map((item) => (
+                <div key={item.title} className="lp-card">
+                  <div className="lp-card-icon">{ICONS[item.icon]}</div>
+                  <h4>{item.title}</h4>
+                  <p>{item.text}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </Reveal>
+        ))}
       </section>
 
       {/* Como funciona */}
-      <section style={{ padding: "56px 32px" }}>
-        <h2 style={{ textAlign: "center", fontSize: "1.75rem", fontWeight: 800, margin: "0 0 40px" }}>
-          Empezar toma minutos, no semanas
-        </h2>
-        <div style={{ display: "flex", gap: 32, flexWrap: "wrap", justifyContent: "center", maxWidth: 900, margin: "0 auto" }}>
-          {STEPS.map((s) => (
-            <div key={s.step} style={{ flex: "1 1 220px", maxWidth: 260, textAlign: "center" }}>
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: "50%",
-                  background: "#eaf6e8",
-                  color: "#2a8f17",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 800,
-                  fontSize: 20,
-                  margin: "0 auto 14px",
-                }}
-              >
-                {s.step}
+      <section id="como-funciona" className="lp-section lp-section-light" style={{ paddingTop: 0 }}>
+        <Reveal>
+          <h2 className="lp-section-title">Empezar toma minutos, no semanas</h2>
+        </Reveal>
+        <Reveal delay={100}>
+          <div className="lp-steps">
+            {STEPS.map((s) => (
+              <div key={s.step} className="lp-step">
+                <div className="lp-step-line" />
+                <div className="lp-step-num">{s.step}</div>
+                <h3>{s.title}</h3>
+                <p>{s.text}</p>
               </div>
-              <h3 style={{ fontSize: "1.0625rem", margin: "0 0 6px" }}>{s.title}</h3>
-              <p style={{ color: "#4d4c52", fontSize: 13.5, margin: 0, lineHeight: 1.5 }}>{s.text}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </Reveal>
       </section>
 
       {/* Contacto */}
-      <section
-        id="contacto"
-        style={{
-          background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
-          color: "#fff",
-          padding: "56px 32px",
-        }}
-      >
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <h2 style={{ fontSize: "1.75rem", fontWeight: 800, margin: "0 0 12px" }}>
-            Lleva {PRODUCT_NAME} a tu negocio
-          </h2>
-          <p style={{ opacity: 0.9, margin: "0 0 24px" }}>Te lo configuramos y lo dejamos funcionando en minutos.</p>
-          <a
-            href={WHATSAPP_LINK}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: "inline-block",
-              background: "#fff",
-              color: "#2a8f17",
-              fontWeight: 800,
-              fontSize: 15,
-              padding: "13px 28px",
-              borderRadius: 999,
-              textDecoration: "none",
-            }}
-          >
-            Escríbenos por WhatsApp
-          </a>
-        </div>
+      <section id="contacto" className="lp-contact">
+        <Reveal className="lp-contact-head">
+          <h2>Lleva {PRODUCT_NAME} a tu negocio</h2>
+          <p>Te lo configuramos y lo dejamos funcionando en minutos.</p>
+          <span className="lp-pulse-wrap">
+            <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="lp-btn lp-btn-light">
+              Escríbenos por WhatsApp
+            </a>
+          </span>
+        </Reveal>
 
-        <div style={{ maxWidth: 480, margin: "0 auto", background: "#fff", borderRadius: 20, padding: "28px 24px" }}>
-          <p style={{ color: "#252527", fontWeight: 700, fontSize: 15, textAlign: "center", margin: "0 0 16px" }}>
-            O prefieres que te contactemos nosotros:
-          </p>
-          <LeadForm />
-        </div>
+        <Reveal delay={120}>
+          <div className="lp-contact-card">
+            <p className="lp-contact-card-title">O prefieres que te contactemos nosotros:</p>
+            <LeadForm />
+          </div>
+        </Reveal>
       </section>
 
-      <footer style={{ padding: "24px 32px", textAlign: "center", color: "#4d4c52", fontSize: 12.5 }}>
-        {PRODUCT_NAME} · Creado por{" "}
-        <span style={{ color: "#31a71b", fontWeight: 700 }}>KenzyGroup S.A.S</span>
+      <footer className="lp-footer">
+        {PRODUCT_NAME} · Creado por <strong>KenzyGroup S.A.S</strong>
       </footer>
     </div>
   );
