@@ -24,7 +24,11 @@
   box-sizing: border-box;
 }
 
-.lp a {
+/* :where() para que este reset tenga especificidad cero: gana sobre el azul por
+   defecto del navegador, pero nunca le gana a las clases de color reales (.lp-btn-light,
+   .lp-nav-links a, etc) — antes ".lp a" (0,1,1) le ganaba a ".lp-btn-light" (0,1,0) y
+   dejaba texto blanco invisible sobre fondo blanco en los botones. */
+.lp :where(a) {
   color: inherit;
 }
 
