@@ -58,7 +58,6 @@ import {
   getPendingOrderQuestion,
   isExplicitCancelRequest,
   type OrderFlowState,
-  type MatchedProductRef,
 } from "./orderFlow.js";
 import {
   EMPTY_STRUCTURED_CART,
@@ -149,7 +148,7 @@ export interface InboundMessageInput {
 }
 
 /** Que menu numerado se le acaba de mandar al cliente (para interpretar su proxima respuesta "1"/"2"/"3"). */
-type PendingMenu = "WELCOME" | "RETURNING" | "CATEGORIES" | "PRODUCTS" | "ADDON" | null;
+type PendingMenu = "WELCOME" | "RETURNING" | "CATEGORIES" | "PRODUCTS" | null;
 
 /** Mapa numero->intent del menu de bienvenida POR DEFECTO (el que arma el bot cuando el negocio no escribio uno propio). */
 const DEFAULT_WELCOME_SHORTCUT: Record<string, string> = {
@@ -230,6 +229,13 @@ interface ConversationContext {
   pendingCategoryIds?: string[] | null;
   /** IDs de producto mostrados numerados cuando pendingMenu === "PRODUCTS", en el mismo orden. */
   pendingProductIds?: string[] | null;
+  /**
+   * Paso guiado de acompanantes/bebidas durante el pedido: primero se pregunta si/no
+   * (stage CONFIRM), y si dice que si se muestran los productos numerados (stage PICK,
+   * optionIds = productos mostrados en ese orden).
+   */
+  pendingSideDrink?: { step: "SIDES" | "DRINKS"; stage: "CONFIRM" | "PICK"; optionIds: string[] } | null;
+  pendingMoreItems?: boolean | null;
   activeCart?: StructuredCartState | null;
   checkout?: CheckoutStateSnapshot | null;
   repeatOrder?: RepeatOrderContextState | null;
@@ -254,6 +260,8 @@ function parseContext(raw: unknown): ConversationContext {
     pendingMenu: null,
     pendingCategoryIds: null,
     pendingProductIds: null,
+    pendingSideDrink: null,
+    pendingMoreItems: null,
     activeCart: null,
     checkout: buildEmptyCheckoutState(),
     repeatOrder: { pendingReplacement: null, lastSourceOrderId: null, lastSourceOrderCode: null },
@@ -272,6 +280,8 @@ function buildPersistedConversationContext(context: ConversationContext): Conver
     pendingMenu: context.pendingMenu ?? null,
     pendingCategoryIds: context.pendingCategoryIds ?? null,
     pendingProductIds: context.pendingProductIds ?? null,
+    pendingSideDrink: context.pendingSideDrink ?? null,
+    pendingMoreItems: context.pendingMoreItems ?? null,
     activeCart: context.activeCart ?? null,
     checkout: context.checkout ?? buildEmptyCheckoutState(),
     repeatOrder: context.repeatOrder ?? { pendingReplacement: null, lastSourceOrderId: null, lastSourceOrderCode: null },
@@ -369,7 +379,7 @@ async function prepareConversationCheckout(
   if (!validation.valid || !validation.pricing || !checkout.summary) {
     const replyText = await generateResponse({
       facts: validation.errors.map((error) => error.message),
-      askNext: "Â¿Desea corregir el pedido para continuar?",
+      askNext: "Por favor, indiqueme si desea corregir el pedido para continuar.",
       businessName: settings.restaurantName,
       tone: settings.assistantTone,
     });
@@ -385,7 +395,7 @@ async function prepareConversationCheckout(
 
   const replyText = await generateResponse({
     facts: formatCartPricingFacts(validation.pricing),
-    askNext: "Â¿Confirma su pedido asi?",
+    askNext: "Por favor, confirme si su pedido esta correcto.",
     businessName: settings.restaurantName,
     tone: settings.assistantTone,
   });
@@ -405,7 +415,7 @@ async function resumeRecoveredCartConversation(params: {
   if (!pricing.valid) {
     return generateResponse({
       facts: pricing.issues.map((issue) => issue.message),
-      askNext: pendingQuestion ?? "¿Desea corregir el pedido para continuar?",
+      askNext: pendingQuestion ?? "Por favor, indiqueme si desea corregir el pedido para continuar.",
       businessName: params.settings.restaurantName,
       tone: params.settings.assistantTone,
     });
@@ -424,7 +434,7 @@ async function resumeRecoveredCartConversation(params: {
   const cart = await ensureStructuredCart(params.context);
   return generateResponse({
     facts: ["Retomemos su pedido desde donde quedamos.", ...summarizeStructuredCart(cart), ...formatCartPricingFacts(pricing)],
-    askNext: pendingQuestion ?? "¿Cómo desea continuar con el pedido?",
+    askNext: pendingQuestion ?? "Por favor, indiqueme como desea continuar con su pedido.",
     businessName: params.settings.restaurantName,
     tone: params.settings.assistantTone,
   });
@@ -818,11 +828,27 @@ interface ResolvedSides {
   unmatchedTexts: string[];
 }
 
-async function resolveSidesFromEntities(entities: ExtractedEntities): Promise<ResolvedSides> {
+/**
+ * Un "acompanante" mencionado por la IA a veces no es un pedido real, sino un eco del
+ * nombre del propio producto principal (ej: "Pollo entero: 8 Presas + Papas cocidas +
+ * Arepas" — el nombre del combo ya incluye "Papas cocidas"/"Arepas", y la IA a veces las
+ * repite como si el cliente las hubiera pedido aparte). Si el texto ya aparece dentro del
+ * nombre de un producto que ya esta en el carrito o pendiente de confirmar, se ignora en vez
+ * de mostrar "no encontre X" y de marcar el paso de acompanantes como ya resuelto.
+ */
+function isSideAlreadyPartOfProduct(sideText: string, productNames: string[]): boolean {
+  const normalized = normalizeText(sideText);
+  if (!normalized) return false;
+  return productNames.some((name) => normalizeText(name).includes(normalized));
+}
+
+async function resolveSidesFromEntities(entities: ExtractedEntities, productNamesToIgnore: string[] = []): Promise<ResolvedSides> {
   if (!entities.sides || entities.sides.length === 0) return { matched: [], unmatchedTexts: [] };
   const matched: Array<{ id: string; name: string; price: number; categoryName: string }> = [];
   const unmatchedTexts: string[] = [];
-  for (const side of entities.sides) {
+  for (const rawSide of entities.sides) {
+    if (isSideAlreadyPartOfProduct(rawSide, productNamesToIgnore)) continue;
+    const side = rawSide;
     const product = await findBestProductMatch(side);
     // Un "acompanante" nunca puede ser un combo — un combo es un paquete completo, no algo
     // que se agrega suelto. Bug real: el cliente pregunto "¿tienen gaseosas?" (una consulta,
@@ -2238,7 +2264,7 @@ async function handleTextMessageLegacy(
         decision.facts = formatCartPricingFacts(pricing);
       } else {
         decision.facts = [pricing.issues[0]?.message ?? "No pude validar el pedido con los precios actuales."];
-        decision.askNext = "Â¿Desea corregir el pedido para continuar?";
+        decision.askNext = "Por favor, indiqueme si desea corregir el pedido para continuar.";
       }
     }
     replyText = await generateResponse({
@@ -2489,25 +2515,81 @@ async function handleTextMessage(
     }
   }
 
-  // El cliente respondio con el numero de un acompanante/bebida que le mostramos (ver
-  // addOnMenu en runOrderFlowTurn). A diferencia del menu de productos/categorias de arriba,
-  // esto SI aplica en medio del pedido (es justo cuando se muestra) y, si la respuesta no es
-  // un numero valido, NO insistimos — cae al procesamiento normal del turno, que ya sabe
-  // interpretar un "no" u otro texto libre para declinar el acompanante/bebida. Bug real: sin
-  // esto, un "1" eligiendo el primer acompanante de la lista se mandaba a clasificacion de IA,
-  // que podia "recordar" el plato principal del historial reciente y responder con productos
-  // ambiguos que no tenian nada que ver con lo que el cliente pidio.
+  // Paso guiado de acompanantes/bebidas activo (lo activa runOrderFlowTurn al llegar a
+  // ASK_SIDES/ASK_DRINKS): "1"/"2" para si/no, y si dice que si, un numero por producto —
+  // mismo mecanismo que el menu principal.
   let forcedSideName: string | null = null;
-  if (context.pendingMenu === "ADDON") {
-    const optionIds = context.pendingProductIds ?? [];
-    const chosenIndex = parseMenuSelectionIndex(normalizedText);
-    const productId = chosenIndex !== null ? optionIds[chosenIndex - 1] : undefined;
-    if (productId) {
-      const categories = await listCatalog();
-      const product = categories.flatMap((cat) => cat.products).find((p) => p.id === productId);
-      if (product) {
-        forcedSideName = product.name;
+  let forcedSideDecline = false;
+  if (inOrderFlowAlready && context.pendingSideDrink) {
+    const pending = context.pendingSideDrink;
+    const label = pending.step === "SIDES" ? "acompañante" : "producto";
+    const categoryKeyword = pending.step === "SIDES" ? "acompanantes" : "bebidas";
+
+    if (pending.stage === "CONFIRM") {
+      const choice = parseMenuSelectionIndex(normalizedText);
+      if (choice === 1) {
+        const category = await findCategoryMatch(categoryKeyword);
+        const numbered = category ? buildNumberedProductsReply(category.categoryName, category.products, settings) : null;
+        if (numbered) {
+          context.pendingSideDrink = { step: pending.step, stage: "PICK", optionIds: numbered.productIds };
+          await prisma.conversation.update({
+            where: { id: conversationId },
+            data: { context: toJsonContext(buildPersistedConversationContext(context)) },
+          });
+          await sendAndLog(conversationId, phone, numbered.text, receivedAt);
+          return;
+        }
+        // Sin productos disponibles en esa categoria: no hay nada que ofrecer, seguimos
+        // como si hubiera dicho que no.
+        context.pendingSideDrink = null;
+        forcedSideDecline = true;
+      } else if (choice === 2) {
+        context.pendingSideDrink = null;
+        forcedSideDecline = true;
+      } else if (!looksLikeMenuFlowExit(normalizedText)) {
+        await sendAndLog(conversationId, phone, "Por favor responda 1 (si) o 2 (no).", receivedAt);
+        return;
+      } else {
+        context.pendingSideDrink = null;
       }
+    } else if (pending.stage === "PICK") {
+      const chosenIndex = parseMenuSelectionIndex(normalizedText);
+      const productId = chosenIndex !== null ? pending.optionIds[chosenIndex - 1] : undefined;
+      if (productId) {
+        const categories = await listCatalog();
+        const product = categories.flatMap((cat) => cat.products).find((p) => p.id === productId);
+        if (product) {
+          forcedSideName = product.name;
+        }
+        context.pendingSideDrink = null;
+      } else if (!looksLikeMenuFlowExit(normalizedText)) {
+        await sendAndLog(
+          conversationId,
+          phone,
+          `Por favor responde solo con el número del ${label} (1 al ${pending.optionIds.length}).`,
+          receivedAt,
+        );
+        return;
+      } else {
+        context.pendingSideDrink = null;
+      }
+    }
+  }
+
+  let forcedMoreItemsIntent: string | null = null;
+  if (inOrderFlowAlready && context.pendingMoreItems) {
+    const choice = parseMenuSelectionIndex(normalizedText);
+    if (choice === 1) {
+      context.pendingMoreItems = null;
+      forcedMoreItemsIntent = Intent.CONFIRM;
+    } else if (choice === 2) {
+      context.pendingMoreItems = null;
+      forcedMoreItemsIntent = Intent.CANCEL;
+    } else if (!looksLikeMenuFlowExit(normalizedText)) {
+      await sendAndLog(conversationId, phone, "Por favor responda 1 (si) o 2 (no).", receivedAt);
+      return;
+    } else {
+      context.pendingMoreItems = null;
     }
   }
 
@@ -2536,6 +2618,10 @@ async function handleTextMessage(
     ? [{ intent: Intent.ORDER_PRODUCT, confidence: 1 }, { ...EMPTY_ENTITIES, productType: forcedProductName }]
     : forcedSideName
     ? [{ intent: Intent.ORDER_PRODUCT, confidence: 1 }, { ...EMPTY_ENTITIES, sides: [forcedSideName] }]
+    : forcedSideDecline
+    ? [{ intent: Intent.UNKNOWN, confidence: 1 }, EMPTY_ENTITIES]
+    : forcedMoreItemsIntent
+    ? [{ intent: forcedMoreItemsIntent, confidence: 1 }, EMPTY_ENTITIES]
     : shortcutIntent
     ? [{ intent: shortcutIntent, confidence: 1 }, EMPTY_ENTITIES]
     : await Promise.all([
@@ -2821,6 +2907,14 @@ async function handleTextMessage(
       } else {
         const numberedCategories = await buildNumberedCategoriesReply();
         if (numberedCategories) {
+          // Fotos generales del menu (si hay configuradas) se mandan antes de la lista de
+          // categorias, no despues — asi el cliente las ve primero y responde con el numero.
+          if (settings.menuImages.length > 0) {
+            const client = await getWhatsAppClient();
+            for (const image of settings.menuImages.slice(0, 5)) {
+              await client.sendImageMessage(phone, image);
+            }
+          }
           replyText = numberedCategories.text;
           context.pendingMenu = "CATEGORIES";
           context.pendingCategoryIds = numberedCategories.categoryIds;
@@ -2910,11 +3004,6 @@ async function handleTextMessage(
       replyText = result.replyText;
       madeProgress = result.madeProgress;
       context.orderFlow = result.nextState;
-      if (result.addOnMenu) {
-        context.pendingMenu = "ADDON";
-        context.pendingCategoryIds = null;
-        context.pendingProductIds = result.addOnMenu;
-      }
       if (!result.orderCreated && JSON.stringify(result.nextState.cart) !== cartBeforeTurn) {
         context.activeCart = null;
       }
@@ -3098,7 +3187,7 @@ async function buildNumberedCategoriesReply(
   if (visible.length === 0) return null;
   const lines = visible.map((cat, i) => `${i + 1}. ${cat.name}`);
   const heading = parentCategoryId ? "Estas son las opciones:" : "Estas son nuestras categorias:";
-  const text = `${heading}\n\n${lines.join("\n")}\n\nResponde con el numero de la opcion que te interesa.`;
+  const text = `${heading}\n\n${lines.join("\n")}\n\nPor favor, responda con el numero de la opcion de su interes.`;
   return { text, categoryIds: visible.map((c) => c.id) };
 }
 
@@ -3117,24 +3206,8 @@ function buildNumberedProductsReply(
         : "";
     return `${i + 1}. ${p.name}${p.unitCount ? ` (${p.unitCount} unidades)` : ""}: ${formatCurrency(p.price, settings.currency)}${comboDetail}`;
   });
-  const text = `*${categoryName}*\n\n${lines.join("\n")}\n\nResponde con el numero del producto que quieres pedir.`;
+  const text = `*${categoryName}*\n\n${lines.join("\n")}\n\nPor favor, responda con el numero del producto que desea pedir.`;
   return { text, productIds: visible.map((p) => p.id) };
-}
-
-/**
- * Lista numerada de acompanantes/bebidas disponibles al preguntar ASK_SIDES/ASK_DRINKS,
- * deterministica (no pasa por la IA) para que la respuesta del cliente ("1", "2"...) se pueda
- * mapear de forma confiable al producto exacto en el siguiente turno (ver pendingMenu ===
- * "ADDON" en handleTextMessage). Se agrega DESPUES del texto que arma la IA, sin reemplazarlo.
- */
-function buildNumberedAddOnReply(
-  items: MatchedProductRef[],
-  currency: string,
-): { text: string; productIds: string[] } | null {
-  if (items.length === 0) return null;
-  const lines = items.map((item, i) => `${i + 1}. ${item.name}: ${formatCurrency(item.price, currency)}`);
-  const text = `${lines.join("\n")}\n\nResponde con el numero si deseas agregar alguno, o "no" si no deseas ninguno.`;
-  return { text, productIds: items.map((item) => item.id) };
 }
 
 async function buildMenuReply(settings: BusinessSettings, pendingQuestion?: string | null): Promise<string> {
@@ -3271,8 +3344,6 @@ interface OrderFlowTurnResult {
   nextState: OrderFlowState;
   orderCreated: boolean;
   stateBeforeReset: OrderFlowState;
-  /** IDs (en el mismo orden mostrado) de los acompanantes/bebidas ofrecidos este turno, si los hubo — ver pendingMenu "ADDON". */
-  addOnMenu: string[] | null;
 }
 
 async function runOrderFlowTurn(params: {
@@ -3326,7 +3397,7 @@ async function runOrderFlowTurn(params: {
       businessName: settings.restaurantName,
       tone: settings.assistantTone,
     });
-    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state, addOnMenu: null };
+    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state };
   }
 
   if (productResolution?.status === "MATCHED" && productResolution.product && !productResolution.product.available) {
@@ -3343,7 +3414,7 @@ async function runOrderFlowTurn(params: {
       businessName: settings.restaurantName,
       tone: settings.assistantTone,
     });
-    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state, addOnMenu: null };
+    return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state };
   }
 
   // El cliente pide una categoria completa en vez de un producto puntual (ej: "quiero una
@@ -3358,16 +3429,21 @@ async function runOrderFlowTurn(params: {
     const categoryMatch = await findCategoryMatch(text);
     if (categoryMatch) {
       const replyText = await buildCategoryReply(categoryMatch, settings, null);
-      return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state, addOnMenu: null };
+      return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state };
     }
   }
 
   // Resolvemos acompanantes/otros productos mencionados en CUALQUIER paso del flujo de pedido,
   // no solo cuando se pregunta explicitamente por ellos — asi "pollo 8 piezas y una gaseosa"
-  // en un solo mensaje no pierde la gaseosa.
+  // en un solo mensaje no pierde la gaseosa. Se ignoran menciones que ya son parte del nombre
+  // del producto principal (pendiente o ya en el carrito) — ver isSideAlreadyPartOfProduct.
+  const productNamesToIgnore = [
+    ...(state.pendingProduct ? [state.pendingProduct.name] : []),
+    ...state.cart.map((line) => line.productName),
+  ];
   const { matched: matchedSides, unmatchedTexts: unmatchedSideTexts } =
     entities.sides && entities.sides.length > 0
-      ? await resolveSidesFromEntities(entities)
+      ? await resolveSidesFromEntities(entities, productNamesToIgnore)
       : { matched: [], unmatchedTexts: [] };
 
   // Bebidas/acompanantes disponibles del catalogo, para ofrecerlos explicitamente en
@@ -3453,7 +3529,8 @@ async function runOrderFlowTurn(params: {
   const madeProgress = stepChanged || decision.facts.length > 0 || decision.readyToCreateOrder || decision.cancelled;
 
   let replyText: string;
-  let addOnMenu: string[] | null = null;
+  context.pendingSideDrink = null;
+  context.pendingMoreItems = null;
   if (decision.readyToCreateOrder) {
     // No se manda nada en este punto: el unico mensaje del cierre lo arma handleOrderCreation
     // (pedido creado, total y tiempo estimado). El "Estamos confirmando su pedido..." que
@@ -3468,7 +3545,27 @@ async function runOrderFlowTurn(params: {
     // metia el nombre completo del producto (con toda su descripcion) dentro de la pregunta
     // ("¿Cuantas unidades de Picada para 2: carne, pollo, chorizo... deseas?") y quedaba
     // ilegible. El nombre va en su propia linea y la pregunta queda corta.
-    replyText = `Plato seleccionado:\n*${decision.nextState.pendingProduct.name}*\n\n¿Cuantas unidades desea?\nDigita un numero`;
+    replyText = `Producto seleccionado:\n*${decision.nextState.pendingProduct.name}*\n\nCuantas unidades desea pedir?\nPor favor, responda con un numero.`;
+  } else if (
+    decision.nextState.step === OrderFlowStep.ASK_SIDES ||
+    decision.nextState.step === OrderFlowStep.ASK_DRINKS ||
+    decision.nextState.step === OrderFlowStep.ASK_MORE_ITEMS
+  ) {
+    // Paso guiado con numeros, igual que el menu principal: en vez de dejar que la IA
+    // redacte la pregunta de acompanantes/bebidas (mezclaba lo que ya venia incluido en el
+    // combo con la pregunta y quedaba confuso), se pregunta si/no de forma fija; si dice que
+    // si, el turno siguiente (interceptado antes de llegar aqui) muestra los productos
+    // numerados de esa categoria.
+    const isSides = decision.nextState.step === OrderFlowStep.ASK_SIDES;
+    const isDrinks = decision.nextState.step === OrderFlowStep.ASK_DRINKS;
+    const label = isSides ? "algun acompanante" : isDrinks ? "alguna bebida" : "otro producto";
+    const factLines = decision.facts.length > 0 ? `${decision.facts.join(" ")}\n\n` : "";
+    replyText = `${factLines}Desea agregar ${label} a su pedido?\n\n1. Si\n2. No`;
+    if (decision.nextState.step === OrderFlowStep.ASK_MORE_ITEMS) {
+      context.pendingMoreItems = true;
+    } else {
+      context.pendingSideDrink = { step: isSides ? "SIDES" : "DRINKS", stage: "CONFIRM", optionIds: [] };
+    }
   } else {
     replyText = await generateResponse({
       facts: [...decision.facts, ...extraFacts],
@@ -3482,25 +3579,6 @@ async function runOrderFlowTurn(params: {
     if (decision.nextState.step === OrderFlowStep.CONFIRMING && !decision.cancelled) {
       replyText = `${replyText}\n1. Si, confirmar\n2. No, cancelar`;
     }
-    // Igual que arriba con la confirmacion: se agrega DESPUES de generar, y deterministico
-    // (sin pasar por la IA, que -copiando el formato numerado de mensajes anteriores en el
-    // historial- podia inventar una lista numerada distinta o datos que no venian en los
-    // Hechos, ej: "(1 unidades)" para un acompanante que no tiene esa info). El numero que el
-    // cliente responda en el siguiente turno se interpreta contra ESTA lista (pendingMenu
-    // "ADDON" en handleTextMessage), no contra lo que la IA haya redactado arriba.
-    if (!decision.cancelled && decision.nextState.step === OrderFlowStep.ASK_SIDES) {
-      const numbered = buildNumberedAddOnReply(availableSides, settings.currency);
-      if (numbered) {
-        replyText = `${replyText}\n\n${numbered.text}`;
-        addOnMenu = numbered.productIds;
-      }
-    } else if (!decision.cancelled && decision.nextState.step === OrderFlowStep.ASK_DRINKS) {
-      const numbered = buildNumberedAddOnReply(availableDrinks, settings.currency);
-      if (numbered) {
-        replyText = `${replyText}\n\n${numbered.text}`;
-        addOnMenu = numbered.productIds;
-      }
-    }
   }
 
   return {
@@ -3509,6 +3587,5 @@ async function runOrderFlowTurn(params: {
     nextState: decision.readyToCreateOrder ? initialOrderFlowState : decision.nextState,
     orderCreated: decision.readyToCreateOrder,
     stateBeforeReset: state,
-    addOnMenu,
   };
 }

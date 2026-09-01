@@ -5,7 +5,7 @@ import { ConversationStatus, OrderFlowStep } from "@pollos/shared";
 // Reproduce el bucle de confirmacion real reportado en un pedido a domicilio (ver captura:
 // "1" repetido tres veces, el bot sigue mandando "¿Confirma su pedido asi?" con el mismo total
 // sin crear nunca el pedido) recorriendo el flujo COMPLETO desde cero, incluyendo la seleccion
-// de acompanante Y bebida por el menu numerado deterministico (pendingMenu "ADDON", ver fix en
+// de acompanante Y bebida por el paso guiado deterministico (pendingSideDrink, ver fix en
 // sidesNumberedSelection.test.ts) antes de domicilio/direccion/pago/confirmar — asi de fiel al
 // reporte real como es posible ("...con papitas a la francesa, ensalada y arepa con queso,
 // ademas de unos aros de cebolla y un agua brisa grande"). La idea es detectar si algo se
@@ -579,12 +579,15 @@ describe("bucle de confirmacion en pedido a domicilio recorriendo el flujo compl
     const { contact } = seedIdleConversation();
 
     await sendMessage(contact.phone, "1", "wamid-1"); // elige "Chuzo de pollo" del menu numerado
-    await sendMessage(contact.phone, "1", "wamid-2"); // cantidad: 1 -> muestra menu numerado de acompanantes (ADDON)
-    await sendMessage(contact.phone, "1", "wamid-3"); // elige "Aros de cebolla" por numero -> muestra menu numerado de bebidas (ADDON)
-    await sendMessage(contact.phone, "1", "wamid-4"); // elige "Agua Brisa grande" por numero
-    await sendMessage(contact.phone, "domicilio", "wamid-5"); // tipo de entrega
-    await sendMessage(contact.phone, "Calle 10 # 5-20, Centro", "wamid-6"); // direccion
-    await sendMessage(contact.phone, "efectivo", "wamid-7"); // metodo de pago
+    await sendMessage(contact.phone, "1", "wamid-2"); // cantidad: 1 -> pregunta si desea acompanante (1 si / 2 no)
+    await sendMessage(contact.phone, "1", "wamid-3"); // si -> muestra la lista numerada de acompanantes
+    await sendMessage(contact.phone, "1", "wamid-4"); // elige "Aros de cebolla" -> pregunta si desea bebida
+    await sendMessage(contact.phone, "1", "wamid-5"); // si -> muestra la lista numerada de bebidas
+    await sendMessage(contact.phone, "1", "wamid-6"); // elige "Agua Brisa grande" -> pregunta si desea otro producto
+    await sendMessage(contact.phone, "2", "wamid-7"); // no, sigue al checkout
+    await sendMessage(contact.phone, "domicilio", "wamid-8"); // tipo de entrega
+    await sendMessage(contact.phone, "Calle 10 # 5-20, Centro", "wamid-9"); // direccion
+    await sendMessage(contact.phone, "efectivo", "wamid-10"); // metodo de pago
 
     const convBeforeConfirm = state.conversations.find((c) => c.contactId === contact.id)!;
     expect(convBeforeConfirm.context.orderFlow.step).toBe(OrderFlowStep.CONFIRMING);
@@ -595,7 +598,7 @@ describe("bucle de confirmacion en pedido a domicilio recorriendo el flujo compl
     ]);
     const confirmPromptCount = state.sentTexts.length;
 
-    await sendMessage(contact.phone, "1", "wamid-8"); // confirma
+    await sendMessage(contact.phone, "1", "wamid-11"); // confirma
 
     const conv = state.conversations.find((c) => c.contactId === contact.id)!;
     const newMessages = state.sentTexts.slice(confirmPromptCount);

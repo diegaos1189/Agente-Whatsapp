@@ -150,7 +150,7 @@ export async function getCartRecommendations(params: {
 
 /**
  * Punto seguro para ofrecer upsell: solo justo cuando el producto principal + acompanantes/
- * bebidas quedaron resueltos ESTE turno (transicion a ASK_DELIVERY_TYPE), nunca durante
+ * bebidas quedaron resueltos ESTE turno (transicion a ASK_MORE_ITEMS), nunca durante
  * checkout/confirmacion ni en turnos donde no hubo avance real del carrito. Pura y exportada
  * para poder probarla sin mockear todo conversationService.ts.
  */
@@ -161,8 +161,8 @@ export function shouldOfferUpsellThisTurn(params: {
 }): boolean {
   return (
     !params.orderCreated &&
-    params.nextStep === OrderFlowStep.ASK_DELIVERY_TYPE &&
-    params.stepBeforeTurn !== OrderFlowStep.ASK_DELIVERY_TYPE
+    params.nextStep === OrderFlowStep.ASK_MORE_ITEMS &&
+    params.stepBeforeTurn !== OrderFlowStep.ASK_MORE_ITEMS
   );
 }
 

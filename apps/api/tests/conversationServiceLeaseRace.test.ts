@@ -42,6 +42,7 @@ const state = vi.hoisted(() => {
       deliveryFee: 0,
       maxUpsellOffers: 1,
       whatsappProvider: "meta",
+      menuImages: [] as string[],
     },
     blockSecondEnqueue: false,
     secondEnqueuePromise: Promise.resolve(),

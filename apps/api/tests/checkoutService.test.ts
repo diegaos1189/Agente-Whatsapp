@@ -364,6 +364,32 @@ describe("checkoutService", () => {
     expect(second.checkout.summary?.confirmationId).not.toBe(first.checkout.summary?.confirmationId);
   });
 
+  it("no invalida la confirmacion si el resumen previo se genero antes de persistir el carrito re-preciado", async () => {
+    setCatalog([pollo], { [pollo.id]: 55000 });
+    const staleState = {
+      ...initialOrderFlowState,
+      step: "CONFIRMING",
+      cart: [{ productId: pollo.id, productName: pollo.name, quantity: 1, unitPrice: 52000 }],
+      deliveryType: "PICKUP" as const,
+      paymentMethod: "CASH" as const,
+    };
+
+    const prepared = await prepareCheckoutSummary({
+      state: staleState,
+      activeCart: null,
+      settings: buildSettings(),
+      previousCheckout: buildEmptyCheckoutState(),
+      at: new Date("2026-08-21T15:00:00-05:00"),
+    });
+
+    const persistedState = {
+      ...staleState,
+      cart: prepared.validation.pricing!.repricedCartLines,
+    };
+
+    expect(isCheckoutSummaryStale(prepared.checkout, persistedState, null)).toBe(false);
+  });
+
   it("invalida confirmaciones obsoletas cuando cambia el carrito despues del resumen", async () => {
     setCatalog([pollo, bbq]);
     const state = {

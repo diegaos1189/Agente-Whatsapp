@@ -26,6 +26,10 @@ export default function PlatformLayout({ children }: { children: ReactNode }) {
             <PlatformNavIcon name="restaurants" />
             Restaurantes
           </Link>
+          <Link href="/super-admin/leads">
+            <PlatformNavIcon name="leads" />
+            Leads
+          </Link>
         </nav>
       </SidebarShell>
       <main className="content">{children}</main>

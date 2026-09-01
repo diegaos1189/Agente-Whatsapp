@@ -107,7 +107,7 @@ describe("'si' pelado en pasos opcionales (acompanantes/bebidas)", () => {
     expect(decision.readyToCreateOrder).toBe(false);
   });
 
-  it("ASK_DRINKS + 'si' nombrando la bebida SI la agrega y avanza", () => {
+  it("ASK_DRINKS + 'si' nombrando la bebida SI la agrega y avanza al paso de agregar mas productos", () => {
     const decision = decideOrderFlow({
       state: {
         ...initialOrderFlowState,
@@ -125,7 +125,7 @@ describe("'si' pelado en pasos opcionales (acompanantes/bebidas)", () => {
       availableDrinks: [gaseosa],
       availableSides: [arepa],
     });
-    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DELIVERY_TYPE);
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_MORE_ITEMS);
     expect(decision.nextState.cart.some((line) => line.productName === "Gaseosa")).toBe(true);
   });
 });

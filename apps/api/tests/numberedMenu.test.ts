@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   inboundMessages: [] as any[],
   leases: [] as any[],
   sentTexts: [] as Array<{ phone: string; body: string }>,
+  sentImages: [] as Array<{ phone: string; dataUrl: string }>,
   catalog: [
     {
       id: "cat-pollo",
@@ -102,6 +103,7 @@ const state = vi.hoisted(() => ({
     deliveryFee: 0,
     maxUpsellOffers: 1,
     whatsappProvider: "meta",
+    menuImages: [] as string[],
   },
   nextContactId: 1,
   nextConversationId: 1,
@@ -325,6 +327,10 @@ vi.mock("../src/modules/whatsapp/whatsappClient.js", () => ({
       state.sentTexts.push({ phone, body });
       return { success: true, providerMessageId: `wamid-out-${state.sentTexts.length}` };
     }),
+    sendImageMessage: vi.fn(async (phone: string, dataUrl: string) => {
+      state.sentImages.push({ phone, dataUrl });
+      return { success: true, providerMessageId: `wamid-img-${state.sentImages.length}` };
+    }),
   })),
 }));
 
@@ -539,6 +545,8 @@ describe("menu numerado por categoria/producto", () => {
     state.inboundMessages = [];
     state.leases = [];
     state.sentTexts = [];
+    state.sentImages = [];
+    state.settings.menuImages = [];
     state.nextContactId = 1;
     state.nextConversationId = 1;
     state.nextMessageId = 1;
@@ -557,6 +565,27 @@ describe("menu numerado por categoria/producto", () => {
     const conv = state.conversations.find((c) => c.contactId === contact.id)!;
     expect(conv.context.pendingMenu).toBe("CATEGORIES");
     expect(conv.context.pendingCategoryIds).toEqual(["cat-pollo", "cat-bebidas", "cat-menu"]);
+  });
+
+  it("si hay fotos de menu configuradas, se mandan antes de la lista de categorias", async () => {
+    state.settings.menuImages = ["data:image/jpeg;base64,AAA", "data:image/jpeg;base64,BBB"];
+    const { contact } = seedActiveConversation();
+    await sendMessage(contact.phone, "menu", "wamid-1");
+
+    expect(state.sentImages).toEqual([
+      { phone: contact.phone, dataUrl: "data:image/jpeg;base64,AAA" },
+      { phone: contact.phone, dataUrl: "data:image/jpeg;base64,BBB" },
+    ]);
+    // Las fotos se mandan como mensajes aparte, antes del texto con la lista numerada.
+    expect(state.sentTexts).toHaveLength(1);
+    expect(state.sentTexts[0]!.body).toContain("1. Pollo Asado");
+  });
+
+  it("sin fotos de menu configuradas, no se manda ninguna imagen", async () => {
+    const { contact } = seedActiveConversation();
+    await sendMessage(contact.phone, "menu", "wamid-1");
+
+    expect(state.sentImages).toHaveLength(0);
   });
 
   it("responder con el numero de categoria muestra los productos numerados de esa categoria", async () => {

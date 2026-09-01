@@ -8,6 +8,12 @@ const ICONS = {
       <path d="M9.5 3v6M14.5 3v6" />
     </>
   ),
+  leads: (
+    <>
+      <path d="M4 4h16v13H8l-4 4V4Z" />
+      <path d="M8 9h8M8 12.5h5" />
+    </>
+  ),
 } as const;
 
 export type PlatformNavIconName = keyof typeof ICONS;

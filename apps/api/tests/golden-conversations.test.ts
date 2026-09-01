@@ -160,6 +160,7 @@ describe("golden conversations", () => {
     state = step(state, { intent: Intent.PROVIDE_INFO, entities: { quantity: 2 }, availableSides: [papas, yuca] }).nextState;
     state = step(state, { intent: Intent.PROVIDE_INFO, matchedSides: [papas] }).nextState;
     state = step(state, { intent: Intent.PROVIDE_INFO, matchedProduct: coca }).nextState;
+    state = step(state, { intent: Intent.CANCEL }).nextState;
     state = step(state, { intent: Intent.PROVIDE_INFO, entities: { deliveryType: "DELIVERY" } }).nextState;
     state = step(state, { intent: Intent.PROVIDE_INFO, entities: { address: "Cra 50 #20-30", neighborhood: "Laureles" } }).nextState;
     state = step(state, { intent: Intent.PROVIDE_INFO, entities: { paymentMethod: "CASH" } }).nextState;
@@ -307,9 +308,9 @@ describe("golden conversations", () => {
       const decision = step({ ...initialOrderFlowState, step: OrderFlowStep.ASK_SIDES, cart: [{ productId: pollo8.id, productName: pollo8.name, quantity: 1, unitPrice: pollo8.price }] }, { intent: Intent.PROVIDE_INFO, matchedSides: [yuca] });
       expect(decision.nextState.cart.some((item) => item.productId === yuca.id)).toBe(true);
     }],
-    ["GOLDEN 14: bebida reconocida pasa a delivery", () => {
+    ["GOLDEN 14: bebida reconocida pasa a preguntar si desea agregar otro producto", () => {
       const decision = step({ ...initialOrderFlowState, step: OrderFlowStep.ASK_DRINKS, cart: [{ productId: pollo8.id, productName: pollo8.name, quantity: 1, unitPrice: pollo8.price }] }, { intent: Intent.PROVIDE_INFO, matchedProduct: coca });
-      expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DELIVERY_TYPE);
+      expect(decision.nextState.step).toBe(OrderFlowStep.ASK_MORE_ITEMS);
     }],
     ["GOLDEN 15: pickup elimina cobro futuro de delivery del flujo", () => {
       const decision = step({ ...initialOrderFlowState, step: OrderFlowStep.ASK_DELIVERY_TYPE, cart: [{ productId: combo8.id, productName: combo8.name, quantity: 1, unitPrice: combo8.price }] }, { intent: Intent.PROVIDE_INFO, entities: { deliveryType: "PICKUP" } });

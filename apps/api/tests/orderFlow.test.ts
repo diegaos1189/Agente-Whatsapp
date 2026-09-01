@@ -126,7 +126,7 @@ describe("decideOrderFlow", () => {
     expect(decision.askNext).toContain("Gaseosa 1.5L");
   });
 
-  it("si el cliente ya pidio una bebida junto con los acompanantes, salta directo a domicilio", () => {
+  it("si el cliente ya pidio una bebida junto con los acompanantes, pasa a preguntar si desea agregar otro producto", () => {
     const state = {
       ...initialOrderFlowState,
       step: OrderFlowStep.ASK_SIDES,
@@ -144,10 +144,10 @@ describe("decideOrderFlow", () => {
       currency: "COP",
     });
 
-    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DELIVERY_TYPE);
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_MORE_ITEMS);
   });
 
-  it("responde en ASK_DRINKS con la bebida elegida y pasa a domicilio", () => {
+  it("responde en ASK_DRINKS con la bebida elegida y pasa a preguntar si desea agregar otro producto", () => {
     const state = {
       ...initialOrderFlowState,
       step: OrderFlowStep.ASK_DRINKS,
@@ -165,7 +165,7 @@ describe("decideOrderFlow", () => {
       currency: "COP",
     });
 
-    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DELIVERY_TYPE);
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_MORE_ITEMS);
     expect(decision.nextState.cart.some((i) => i.productId === "gaseosa")).toBe(true);
   });
 
@@ -388,7 +388,7 @@ describe("decideOrderFlow", () => {
     expect(decision.nextState.step).toBe(OrderFlowStep.CONFIRMING);
     expect(decision.nextState.deliveryType).toBe("PICKUP");
     expect(decision.nextState.address).toBeNull();
-    expect(decision.askNext).toContain("Confirma");
+    expect(decision.askNext).toContain("confirme");
   });
 
   it("si el cliente corrige direccion en CONFIRMING, actualiza el dato sin perder el pedido", () => {
@@ -487,15 +487,26 @@ describe("respuestas a preguntas opcionales (acompanantes / bebidas)", () => {
     expect(decision.askNext).toContain("Gaseosa 1.5L");
   });
 
-  it("un 'No' en ASK_DRINKS declina la bebida y avanza a domicilio, conservando el carrito", () => {
+  it("un 'No' en ASK_DRINKS declina la bebida y avanza a preguntar si desea agregar otro producto, conservando el carrito", () => {
     const decision = decide({
       state: { ...initialOrderFlowState, step: OrderFlowStep.ASK_DRINKS, cart: cartWithMainItem, sidesAsked: true },
       intent: Intent.CANCEL,
     });
 
     expect(decision.cancelled).toBe(false);
-    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DELIVERY_TYPE);
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_MORE_ITEMS);
     expect(decision.nextState.drinksAsked).toBe(true);
+    expect(decision.nextState.cart).toEqual(cartWithMainItem);
+  });
+
+  it("un 'No' en ASK_MORE_ITEMS avanza a entrega sin cancelar ni vaciar el carrito", () => {
+    const decision = decide({
+      state: { ...initialOrderFlowState, step: OrderFlowStep.ASK_MORE_ITEMS, cart: cartWithMainItem, sidesAsked: true, drinksAsked: true },
+      intent: Intent.CANCEL,
+    });
+
+    expect(decision.cancelled).toBe(false);
+    expect(decision.nextState.step).toBe(OrderFlowStep.ASK_DELIVERY_TYPE);
     expect(decision.nextState.cart).toEqual(cartWithMainItem);
   });
 
