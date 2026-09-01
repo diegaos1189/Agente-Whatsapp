@@ -96,7 +96,7 @@ describe("contexto de pregunta pendiente en las llamadas de IA", () => {
 
   it("la pregunta pendiente que se le pasa a la IA describe el paso real del pedido", () => {
     expect(getPendingOrderQuestion({ ...initialOrderFlowState, step: OrderFlowStep.ASK_SIDES })).toContain("acompanante");
-    expect(getPendingOrderQuestion({ ...initialOrderFlowState, step: OrderFlowStep.ASK_DRINKS })).toContain("tomar");
+    expect(getPendingOrderQuestion({ ...initialOrderFlowState, step: OrderFlowStep.ASK_DRINKS })).toContain("bebida");
     expect(getPendingOrderQuestion(initialOrderFlowState)).toBeNull();
   });
 });
@@ -117,7 +117,7 @@ describe("carve-out de CONFIRM cuando la pregunta pendiente es la confirmacion f
   // pregunta del paso CONFIRMING y deja de contener ese texto, la excepcion deja de aplicar
   // en silencio y "Si" vuelve a caer en PROVIDE_INFO, por eso se atan las dos puntas aqui.
   it("la pregunta del paso CONFIRMING contiene el texto sobre el que dispara la excepcion", () => {
-    expect(confirmingQuestion).toContain("confirma su pedido");
+    expect(confirmingQuestion.toLowerCase()).toContain("confirme su pedido");
   });
 
   it("las instrucciones mantienen CONFIRM (y no lo degradan a PROVIDE_INFO) en la confirmacion final", async () => {

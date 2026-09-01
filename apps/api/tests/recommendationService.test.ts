@@ -312,21 +312,21 @@ describe("shouldOfferUpsellThisTurn (punto seguro de oferta, no interfiere con c
     ).toBe(false);
   });
 
-  it("dispara justo al resolver acompanantes/bebidas (transicion a ASK_DELIVERY_TYPE)", () => {
+  it("dispara justo al resolver acompanantes/bebidas (transicion a ASK_MORE_ITEMS)", () => {
     expect(
-      shouldOfferUpsellThisTurn({ stepBeforeTurn: OrderFlowStep.ASK_DRINKS, nextStep: OrderFlowStep.ASK_DELIVERY_TYPE, orderCreated: false }),
+      shouldOfferUpsellThisTurn({ stepBeforeTurn: OrderFlowStep.ASK_DRINKS, nextStep: OrderFlowStep.ASK_MORE_ITEMS, orderCreated: false }),
     ).toBe(true);
   });
 
-  it("no repite la oferta en turnos donde ya estaba en ASK_DELIVERY_TYPE (evita re-disparo)", () => {
+  it("no repite la oferta en turnos donde ya estaba en ASK_MORE_ITEMS (evita re-disparo)", () => {
     expect(
-      shouldOfferUpsellThisTurn({ stepBeforeTurn: OrderFlowStep.ASK_DELIVERY_TYPE, nextStep: OrderFlowStep.ASK_DELIVERY_TYPE, orderCreated: false }),
+      shouldOfferUpsellThisTurn({ stepBeforeTurn: OrderFlowStep.ASK_MORE_ITEMS, nextStep: OrderFlowStep.ASK_MORE_ITEMS, orderCreated: false }),
     ).toBe(false);
   });
 
   it("nunca dispara si el pedido ya se creo en este turno", () => {
     expect(
-      shouldOfferUpsellThisTurn({ stepBeforeTurn: OrderFlowStep.ASK_DRINKS, nextStep: OrderFlowStep.ASK_DELIVERY_TYPE, orderCreated: true }),
+      shouldOfferUpsellThisTurn({ stepBeforeTurn: OrderFlowStep.ASK_DRINKS, nextStep: OrderFlowStep.ASK_MORE_ITEMS, orderCreated: true }),
     ).toBe(false);
   });
 });

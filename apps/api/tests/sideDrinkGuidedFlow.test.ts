@@ -676,8 +676,8 @@ describe("acompañantes/bebidas guiados por numero", () => {
 
     expect(state.sentTexts).toHaveLength(1);
     const body = state.sentTexts[0]!.body;
-    expect(body).toContain("¿Deseas agregar algún acompañante?");
-    expect(body).toContain("1. Sí");
+    expect(body).toContain("Desea agregar algun acompanante a su pedido?");
+    expect(body).toContain("1. Si");
     expect(body).toContain("2. No");
     // No debe traer la redaccion de IA confusa (mock de generateResponse concatena
     // facts+askNext con espacios, muy distinto al texto fijo esperado).
@@ -767,7 +767,7 @@ describe("acompañantes/bebidas guiados por numero", () => {
     // resuelto" solo porque la IA repitio el nombre del combo.
     const conv = state.conversations.find((c) => c.contactId === contact.id)!;
     expect(conv.context.orderFlow.step).toBe(OrderFlowStep.ASK_SIDES);
-    expect(body).toContain("¿Deseas agregar algún acompañante?");
+    expect(body).toContain("Desea agregar algun acompanante a su pedido?");
   });
 
   it("'1' en la confirmacion de acompanantes muestra los productos numerados", async () => {
@@ -799,8 +799,8 @@ describe("acompañantes/bebidas guiados por numero", () => {
     expect(conv.context.pendingSideDrink).toEqual({ step: "DRINKS", stage: "CONFIRM", optionIds: [] });
 
     const body = state.sentTexts[0]!.body;
-    expect(body).toContain("¿Deseas agregar alguna bebida?");
-    expect(body).toContain("1. Sí");
+    expect(body).toContain("Desea agregar alguna bebida a su pedido?");
+    expect(body).toContain("1. Si");
     expect(body).toContain("2. No");
   });
 
@@ -813,7 +813,7 @@ describe("acompañantes/bebidas guiados por numero", () => {
     expect(conv.context.orderFlow.step).toBe(OrderFlowStep.ASK_DRINKS);
 
     const body = state.sentTexts[0]!.body;
-    expect(body).toContain("¿Deseas agregar alguna bebida?");
+    expect(body).toContain("Desea agregar alguna bebida a su pedido?");
   });
 
   it("una respuesta que no es 1 ni 2 insiste, sin romper el flujo", async () => {
@@ -821,7 +821,7 @@ describe("acompañantes/bebidas guiados por numero", () => {
     await sendMessage(contact.phone, "tal vez", "wamid-1");
 
     expect(state.sentTexts).toHaveLength(1);
-    expect(state.sentTexts[0]!.body).toContain("Por favor responde 1");
+    expect(state.sentTexts[0]!.body).toContain("Por favor responda 1");
 
     const conv = state.conversations.find((c) => c.contactId === contact.id)!;
     expect(conv.context.pendingSideDrink).toEqual({ step: "SIDES", stage: "CONFIRM", optionIds: [] });
@@ -947,10 +947,11 @@ describe("acompañantes/bebidas guiados por numero", () => {
     await sendMessage(contact.phone, "1", "wamid-2");
     await sendMessage(contact.phone, "2", "wamid-3");
     await sendMessage(contact.phone, "2", "wamid-4");
-    await sendMessage(contact.phone, "domicilio", "wamid-5");
-    await sendMessage(contact.phone, "Cra 50 #20-30", "wamid-6");
-    await sendMessage(contact.phone, "efectivo", "wamid-7");
-    await sendMessage(contact.phone, "si", "wamid-8");
+    await sendMessage(contact.phone, "2", "wamid-5");
+    await sendMessage(contact.phone, "domicilio", "wamid-6");
+    await sendMessage(contact.phone, "Cra 50 #20-30", "wamid-7");
+    await sendMessage(contact.phone, "efectivo", "wamid-8");
+    await sendMessage(contact.phone, "si", "wamid-9");
 
     const confirmationMessages = state.sentTexts.filter(
       (item) => item.body.includes("Si, confirmar") || /confirma su pedido/i.test(item.body),
@@ -1069,9 +1070,10 @@ describe("acompañantes/bebidas guiados por numero", () => {
     await sendMessage(contact.phone, "1", "wamid-p2");
     await sendMessage(contact.phone, "2", "wamid-p3");
     await sendMessage(contact.phone, "2", "wamid-p4");
-    await sendMessage(contact.phone, "recoger", "wamid-p5");
-    await sendMessage(contact.phone, "efectivo", "wamid-p6");
-    await sendMessage(contact.phone, "si", "wamid-p7");
+    await sendMessage(contact.phone, "2", "wamid-p5");
+    await sendMessage(contact.phone, "recoger", "wamid-p6");
+    await sendMessage(contact.phone, "efectivo", "wamid-p7");
+    await sendMessage(contact.phone, "si", "wamid-p8");
 
     const allBodies = state.sentTexts.map((item) => item.body).join("\n");
     const confirmationMessages = state.sentTexts.filter(
@@ -1198,13 +1200,14 @@ describe("acompañantes/bebidas guiados por numero", () => {
     await sendMessage(contact.phone, "1", "wamid-r2");
     await sendMessage(contact.phone, "2", "wamid-r3");
     await sendMessage(contact.phone, "2", "wamid-r4");
-    await sendMessage(contact.phone, "recoger", "wamid-r5");
-    await sendMessage(contact.phone, "efectivo", "wamid-r6");
+    await sendMessage(contact.phone, "2", "wamid-r5");
+    await sendMessage(contact.phone, "recoger", "wamid-r6");
+    await sendMessage(contact.phone, "efectivo", "wamid-r7");
 
     effectivePrice = 50000;
 
-    await sendMessage(contact.phone, "si", "wamid-r7");
     await sendMessage(contact.phone, "si", "wamid-r8");
+    await sendMessage(contact.phone, "si", "wamid-r9");
 
     const repricingConfirmationMessages = state.sentTexts.filter(
       (item) =>

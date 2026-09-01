@@ -125,7 +125,7 @@ function buildPaymentMethodAskNext(acceptedPaymentMethods: PaymentMethod[]): str
   const methods = acceptedPaymentMethods.length > 0 ? acceptedPaymentMethods : DEFAULT_PAYMENT_METHODS;
   const labels = methods.map(paymentMethodLabel);
   const list = labels.length > 1 ? `${labels.slice(0, -1).join(", ")} o ${labels[labels.length - 1]}` : labels[0];
-  return `¿Como va a pagar: ${list}?`;
+  return `Por favor, indiqueme como desea pagar: ${list}.`;
 }
 
 // Exige al menos 2 palabras en comun (no 1) para considerar "el mismo producto" — con 1 sola
@@ -143,7 +143,7 @@ function namesOverlap(a: string, b: string): boolean {
 
 function unmatchedSideNote(unmatchedSideTexts: string[]): string[] {
   if (unmatchedSideTexts.length === 0) return [];
-  return [`No encontre "${unmatchedSideTexts.join(", ")}" en el menu, digame el nombre exacto si lo quiere agregar.`];
+  return [`No encontre "${unmatchedSideTexts.join(", ")}" en el menu. Si desea agregarlo, por favor indiqueme el nombre exacto.`];
 }
 
 function isDrinkCategory(categoryName: string | undefined): boolean {
@@ -156,23 +156,27 @@ function hasDrink(items: MatchedProductRef[]): boolean {
 
 /** Pregunta de acompanantes ofreciendo explicitamente los disponibles del catalogo (categoria "Acompanantes"). */
 function buildSidesAskNext(availableSides: MatchedProductRef[] | undefined, currency: string): string {
-  if (!availableSides || availableSides.length === 0) return "¿Desea agregar algun acompanante?";
+  if (!availableSides || availableSides.length === 0) return "Desea agregar algun acompanante a su pedido?";
   const list = availableSides.map((s) => `${s.name} (${formatCurrency(s.price, currency)})`).join(", ");
-  return `¿Desea agregar algun acompanante? Tenemos: ${list}.`;
+  return `Desea agregar algun acompanante a su pedido? Estas son las opciones disponibles: ${list}.`;
 }
 
 /** Pregunta de bebidas ofreciendo explicitamente las disponibles del catalogo (categoria "Bebidas"). */
 function buildDrinksAskNext(availableDrinks: MatchedProductRef[] | undefined, currency: string): string {
-  if (!availableDrinks || availableDrinks.length === 0) return "¿Desea agregar alguna bebida?";
+  if (!availableDrinks || availableDrinks.length === 0) return "Desea agregar alguna bebida a su pedido?";
   const list = availableDrinks.map((d) => `${d.name} (${formatCurrency(d.price, currency)})`).join(", ");
-  return `¿Que desea tomar? Tenemos: ${list}.`;
+  return `Desea agregar alguna bebida a su pedido? Estas son las opciones disponibles: ${list}.`;
 }
 
-/** Determina el siguiente paso despues de agregar el producto principal: primero acompanantes, luego bebidas, luego domicilio — saltando los que ya vinieron resueltos en el mismo mensaje. */
+function buildAskMoreItemsPrompt(): string {
+  return "Desea agregar otro producto a su pedido antes de continuar con la entrega?";
+}
+
+/** Determina el siguiente paso despues de agregar el producto principal: primero acompanantes, luego bebidas y luego opcion de agregar mas productos. */
 function nextStepAfterMainItem(sidesAlreadyHandled: boolean, drinksAlreadyHandled: boolean): OrderFlowStep {
   if (!sidesAlreadyHandled) return OrderFlowStep.ASK_SIDES;
   if (!drinksAlreadyHandled) return OrderFlowStep.ASK_DRINKS;
-  return OrderFlowStep.ASK_DELIVERY_TYPE;
+  return OrderFlowStep.ASK_MORE_ITEMS;
 }
 
 /**
@@ -181,7 +185,7 @@ function nextStepAfterMainItem(sidesAlreadyHandled: boolean, drinksAlreadyHandle
  * (el clasificador no sabe que pregunta esta contestando), y cancelar el pedido entero por eso
  * borraba el carrito — ver el manejo de CANCEL en decideOrderFlow.
  */
-const OPTIONAL_ITEM_STEPS: OrderFlowStep[] = [OrderFlowStep.ASK_SIDES, OrderFlowStep.ASK_DRINKS];
+const OPTIONAL_ITEM_STEPS: OrderFlowStep[] = [OrderFlowStep.ASK_SIDES, OrderFlowStep.ASK_DRINKS, OrderFlowStep.ASK_MORE_ITEMS];
 
 // Solo palabras que NUNCA significan otra cosa. "no", "mejor no", "ya no", "nada mas" quedan
 // deliberadamente fuera: contestando "¿desea algun acompanante?" significan "ese item no",
@@ -212,8 +216,10 @@ function askNextForStep(
       return buildSidesAskNext(availableSides, currency);
     case OrderFlowStep.ASK_DRINKS:
       return buildDrinksAskNext(availableDrinks, currency);
+    case OrderFlowStep.ASK_MORE_ITEMS:
+      return buildAskMoreItemsPrompt();
     default:
-      return "¿Es para domicilio o para recoger en el local?";
+      return "Su pedido es para domicilio o para recoger en el local?";
   }
 }
 
@@ -253,13 +259,20 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     }
 
     const decliningDrinks = state.step === OrderFlowStep.ASK_DRINKS;
+    const decliningMoreItems = state.step === OrderFlowStep.ASK_MORE_ITEMS;
     const drinksHandled = decliningDrinks || state.drinksAsked;
     // Al llegar a cualquiera de estos dos pasos los acompanantes ya se preguntaron o se
     // resolvieron en el mismo mensaje, por eso sidesAlreadyHandled va en true.
-    const nextStep = nextStepAfterMainItem(true, drinksHandled);
+    const nextStep = decliningMoreItems ? OrderFlowStep.ASK_DELIVERY_TYPE : nextStepAfterMainItem(true, drinksHandled);
     return {
       nextState: { ...state, sidesAsked: true, drinksAsked: drinksHandled, step: nextStep },
-      facts: [decliningDrinks ? "Listo, sin bebidas." : "Listo, sin acompanantes."],
+      facts: [
+        decliningMoreItems
+          ? "Perfecto. Continuemos con los datos de entrega de su pedido."
+          : decliningDrinks
+            ? "Perfecto, continuaremos sin bebidas."
+            : "Perfecto, continuaremos sin acompanantes.",
+      ],
       askNext: askNextForStep(nextStep, availableSides, availableDrinks, currency),
       readyToCreateOrder: false,
       cancelled: false,
@@ -288,9 +301,9 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       if (nextDeliveryType === "DELIVERY" && !nextStateBase.address) {
         return {
           nextState: { ...nextStateBase, step: OrderFlowStep.ASK_ADDRESS },
-          facts: ["Listo, cambio su pedido a domicilio."],
+          facts: ["Perfecto, actualice su pedido para domicilio."],
           askNext:
-            "Perfecto, ¿cual es su direccion completa, barrio y un punto de referencia? Si el domiciliario debe llamar a un numero distinto a este de WhatsApp, compartalo tambien.",
+            "Por favor, indiqueme su direccion completa, el barrio y un punto de referencia. Si el domiciliario debe comunicarse a un numero distinto al de este chat, compartamelo tambien.",
           readyToCreateOrder: false,
           cancelled: false,
         };
@@ -301,8 +314,8 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
           nextState: { ...nextStateBase, step: OrderFlowStep.ASK_PAYMENT_METHOD },
           facts:
             nextDeliveryType === "PICKUP"
-              ? ["Listo, cambio su pedido para recoger en el local."]
-              : ["Actualice los datos de entrega de su pedido."],
+              ? ["Perfecto, su pedido quedo para recoger en el local."]
+              : ["Perfecto, actualice los datos de entrega de su pedido."],
           askNext: buildPaymentMethodAskNext(acceptedPaymentMethods),
           readyToCreateOrder: false,
           cancelled: false,
@@ -313,7 +326,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       return {
         nextState: { ...nextStateBase, step: OrderFlowStep.CONFIRMING },
         facts: summarizeCart(nextStateBase, deliveryFee, currency),
-        askNext: "¿Confirma su pedido asi?",
+        askNext: "Por favor, confirme si su pedido esta correcto.",
         readyToCreateOrder: false,
         cancelled: false,
       };
@@ -349,7 +362,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     if (existingCartItem) {
       return {
         nextState: state,
-        facts: [`Ya tiene en su pedido: ${existingCartItem.quantity}x ${existingCartItem.productName}.`],
+        facts: [`Actualmente su pedido ya incluye: ${existingCartItem.quantity}x ${existingCartItem.productName}.`],
         askNext: getPendingOrderQuestion(state, acceptedPaymentMethods),
         readyToCreateOrder: false,
         cancelled: false,
@@ -377,11 +390,11 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
     return {
       nextState,
       facts: [
-        `Entendido, actualice su pedido con lo que me acaba de decir.`,
+        `Perfecto, actualice su pedido con la correccion que me indico.`,
         ...unmatchedSideNote(unmatchedSideTexts),
         ...summarizeCart(nextState, deliveryFee, currency),
       ],
-      askNext: state.step === OrderFlowStep.CONFIRMING ? "¿Confirma su pedido asi?" : getPendingOrderQuestion(nextState, acceptedPaymentMethods),
+      askNext: state.step === OrderFlowStep.CONFIRMING ? "Por favor, confirme si su pedido esta correcto." : getPendingOrderQuestion(nextState, acceptedPaymentMethods),
       readyToCreateOrder: false,
       cancelled: false,
     };
@@ -407,7 +420,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
         ...unmatchedSideNote(unmatchedSideTexts),
         ...summarizeCart(nextState, deliveryFee, currency),
       ],
-      askNext: state.step === OrderFlowStep.CONFIRMING ? "¿Confirma su pedido asi?" : getPendingOrderQuestion(nextState, acceptedPaymentMethods),
+      askNext: state.step === OrderFlowStep.CONFIRMING ? "Por favor, confirme si su pedido esta correcto." : getPendingOrderQuestion(nextState, acceptedPaymentMethods),
       readyToCreateOrder: false,
       cancelled: false,
     };
@@ -469,7 +482,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
             ...(matchedSides.length > 0 ? [`Agregue ${matchedSides.map((s) => s.name).join(", ")}.`] : []),
             ...unmatchedSideNote(unmatchedSideTexts),
           ],
-          askNext: `¿Cuantas unidades de ${matchedProduct.name} desea?`,
+          askNext: `Cuantas unidades de ${matchedProduct.name} desea pedir?`,
           readyToCreateOrder: false,
           cancelled: false,
         };
@@ -477,7 +490,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       return {
         nextState: { ...state, step: OrderFlowStep.COLLECTING_ITEMS },
         facts: [],
-        askNext: "Claro que si, ¿que le gustaria pedir del menu?",
+        askNext: "Con mucho gusto. Indiqueme que producto del menu desea pedir.",
         readyToCreateOrder: false,
         cancelled: false,
       };
@@ -488,7 +501,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
         return {
           nextState: { ...state, step: OrderFlowStep.ASK_QUANTITY_OR_SIZE, pendingProduct: matchedProduct },
           facts: [],
-          askNext: `¿Cuantas unidades de ${matchedProduct.name} desea?`,
+          askNext: `Cuantas unidades de ${matchedProduct.name} desea pedir?`,
           readyToCreateOrder: false,
           cancelled: false,
         };
@@ -496,7 +509,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       return {
         nextState: state,
         facts: [],
-        askNext: "¿Me confirma el nombre exacto del producto del menu que desea pedir?",
+        askNext: "Por favor, indiqueme el nombre exacto del producto del menu que desea pedir.",
         readyToCreateOrder: false,
         cancelled: false,
       };
@@ -552,7 +565,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
         ...matchedSides.map((s) => ({ productId: s.id, productName: s.name, quantity: 1, unitPrice: s.price })),
       ];
       const drinksAlreadyHandled = hasDrink(matchedSides);
-      const nextStep = drinksAlreadyHandled ? OrderFlowStep.ASK_DELIVERY_TYPE : OrderFlowStep.ASK_DRINKS;
+      const nextStep = drinksAlreadyHandled ? OrderFlowStep.ASK_MORE_ITEMS : OrderFlowStep.ASK_DRINKS;
       return {
         nextState: { ...state, cart: cartWithSides, sidesAsked: true, drinksAsked: drinksAlreadyHandled, step: nextStep },
         facts: [
@@ -582,12 +595,40 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
         ...matchedSides.map((s) => ({ productId: s.id, productName: s.name, quantity: 1, unitPrice: s.price })),
       ];
       return {
-        nextState: { ...state, cart: [...state.cart, ...drinkItems], drinksAsked: true, step: OrderFlowStep.ASK_DELIVERY_TYPE },
+        nextState: { ...state, cart: [...state.cart, ...drinkItems], drinksAsked: true, step: OrderFlowStep.ASK_MORE_ITEMS },
         facts: [
           ...(drinkItems.length > 0 ? [`Agregue ${drinkItems.map((i) => i.productName).join(", ")}.`] : []),
           ...unmatchedSideNote(unmatchedSideTexts),
         ],
-        askNext: "¿Es para domicilio o para recoger en el local?",
+        askNext: buildAskMoreItemsPrompt(),
+        readyToCreateOrder: false,
+        cancelled: false,
+      };
+    }
+
+    case OrderFlowStep.ASK_MORE_ITEMS: {
+      if (matchedProduct && ORDER_INTAKE_INTENTS.includes(intent)) {
+        return {
+          nextState: { ...state, step: OrderFlowStep.ASK_QUANTITY_OR_SIZE, pendingProduct: matchedProduct },
+          facts: [],
+          askNext: `Cuantas unidades de ${matchedProduct.name} desea pedir?`,
+          readyToCreateOrder: false,
+          cancelled: false,
+        };
+      }
+      if (intent === Intent.CONFIRM) {
+        return {
+          nextState: { ...state, step: OrderFlowStep.COLLECTING_ITEMS },
+          facts: [],
+          askNext: "Con mucho gusto. Indiqueme que otro producto desea agregar a su pedido.",
+          readyToCreateOrder: false,
+          cancelled: false,
+        };
+      }
+      return {
+        nextState: { ...state, step: OrderFlowStep.ASK_DELIVERY_TYPE },
+        facts: ["Perfecto. Continuemos con los datos de entrega de su pedido."],
+        askNext: "Su pedido es para domicilio o para recoger en el local?",
         readyToCreateOrder: false,
         cancelled: false,
       };
@@ -598,7 +639,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
         return {
           nextState: state,
           facts: [],
-          askNext: "Cuenteme, ¿el pedido es para domicilio o para recoger en el local?",
+          askNext: "Por favor, indiqueme si su pedido es para domicilio o para recoger en el local.",
           readyToCreateOrder: false,
           cancelled: false,
         };
@@ -608,14 +649,14 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
           nextState: { ...state, deliveryType: "DELIVERY", step: OrderFlowStep.ASK_ADDRESS },
           facts: [],
           askNext:
-            "Perfecto, ¿cual es su direccion completa, barrio y un punto de referencia? Si el domiciliario debe llamar a un numero distinto a este de WhatsApp, compartalo tambien.",
+            "Por favor, indiqueme su direccion completa, el barrio y un punto de referencia. Si el domiciliario debe comunicarse a un numero distinto al de este chat, compartamelo tambien.",
           readyToCreateOrder: false,
           cancelled: false,
         };
       }
       return {
         nextState: { ...state, deliveryType: "PICKUP", step: OrderFlowStep.ASK_PAYMENT_METHOD },
-        facts: ["Listo, su pedido lo recoge en el local."],
+        facts: ["Perfecto, su pedido sera para recoger en el local."],
         askNext: buildPaymentMethodAskNext(acceptedPaymentMethods),
         readyToCreateOrder: false,
         cancelled: false,
@@ -628,7 +669,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
           nextState: state,
           facts: [],
           askNext:
-            "¿Me comparte la direccion completa (calle, barrio y una referencia) para el domicilio, y un numero de contacto para el domiciliario si es distinto a este de WhatsApp?",
+            "Por favor, compartame la direccion completa, el barrio y una referencia para el domicilio. Si desea, tambien puede indicarme un numero de contacto para el domiciliario distinto al de este chat.",
           readyToCreateOrder: false,
           cancelled: false,
         };
@@ -644,7 +685,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
         },
         // Sin este hecho, la IA se queda sin nada que confirmar y rellena con frases
         // genericas incoherentes (ej: "¿que te gustaria pedir hoy?" en medio del pedido).
-        facts: ["Su direccion y datos de contacto para el domicilio quedaron registrados."],
+        facts: ["Su direccion y los datos de contacto para el domicilio quedaron registrados correctamente."],
         askNext: buildPaymentMethodAskNext(acceptedPaymentMethods),
         readyToCreateOrder: false,
         cancelled: false,
@@ -657,7 +698,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
         return {
           nextState: state,
           facts: entities.paymentMethod
-            ? [`No manejamos ese metodo de pago.`]
+            ? [`Actualmente no manejamos ese metodo de pago.`]
             : [],
           askNext: buildPaymentMethodAskNext(acceptedPaymentMethods),
           readyToCreateOrder: false,
@@ -673,7 +714,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       return {
         nextState,
         facts: summarizeCart(nextState, deliveryFee, currency),
-        askNext: "¿Confirma su pedido asi?",
+        askNext: "Por favor, confirme si su pedido esta correcto.",
         readyToCreateOrder: false,
         cancelled: false,
       };
@@ -693,7 +734,7 @@ export function decideOrderFlow(input: OrderFlowDecideInput): OrderFlowDecision 
       return {
         nextState: state,
         facts: summarizeCart(state, deliveryFee, currency),
-        askNext: "¿Confirma su pedido asi?",
+        askNext: "Por favor, confirme si su pedido esta correcto.",
         readyToCreateOrder: false,
         cancelled: false,
       };
@@ -720,25 +761,25 @@ export function getPendingOrderQuestion(
 ): string | null {
   switch (state.step) {
     case OrderFlowStep.COLLECTING_ITEMS:
-      return "¿que le gustaria pedir del menu?";
+      return "Que producto del menu desea agregar a su pedido?";
     case OrderFlowStep.ASK_QUANTITY_OR_SIZE:
       return state.pendingProduct
-        ? `¿cuantas unidades de ${state.pendingProduct.name} desea?`
-        : "¿que le gustaria pedir?";
+        ? `Cuantas unidades de ${state.pendingProduct.name} desea pedir?`
+        : "Que producto desea agregar a su pedido?";
     case OrderFlowStep.ASK_SIDES:
-      // Sin ejemplos de comida concretos: este texto tambien viaja en el prompt de la IA y el
-      // catalogo real lo pone buildSidesAskNext (el tipo de producto depende del negocio).
-      return "¿desea agregar algun acompanante?";
+      return "Desea agregar algun acompanante a su pedido?";
     case OrderFlowStep.ASK_DRINKS:
-      return "¿que desea tomar?";
+      return "Desea agregar alguna bebida a su pedido?";
+    case OrderFlowStep.ASK_MORE_ITEMS:
+      return "Desea agregar otro producto a su pedido antes de continuar con la entrega?";
     case OrderFlowStep.ASK_DELIVERY_TYPE:
-      return "¿su pedido es para domicilio o para recoger en el local?";
+      return "Su pedido es para domicilio o para recoger en el local?";
     case OrderFlowStep.ASK_ADDRESS:
-      return "¿cual es su direccion completa, barrio, un punto de referencia y (si aplica) un numero de contacto distinto para el domiciliario?";
+      return "Cual es su direccion completa, barrio, un punto de referencia y, si aplica, un numero de contacto distinto para el domiciliario?";
     case OrderFlowStep.ASK_PAYMENT_METHOD:
       return buildPaymentMethodAskNext(acceptedPaymentMethods).toLowerCase();
     case OrderFlowStep.CONFIRMING:
-      return "¿confirma su pedido asi? responda *si* para confirmar o *cancelar* para anular.";
+      return "Por favor confirme su pedido. Responda *si* para confirmar o *cancelar* para anularlo.";
     default:
       return null;
   }
