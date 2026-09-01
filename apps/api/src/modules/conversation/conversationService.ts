@@ -2614,7 +2614,7 @@ async function handleTextMessage(
     context.pendingProductIds = null;
   }
 
-  const [intentResult, entities] = forcedProductName
+  const [intentResult, extractedEntities] = forcedProductName
     ? [{ intent: Intent.ORDER_PRODUCT, confidence: 1 }, { ...EMPTY_ENTITIES, productType: forcedProductName }]
     : forcedSideName
     ? [{ intent: Intent.ORDER_PRODUCT, confidence: 1 }, { ...EMPTY_ENTITIES, sides: [forcedSideName] }]
@@ -2629,6 +2629,7 @@ async function handleTextMessage(
         extractEntities({ message: normalizedText, recentHistory: history, businessName: settings.restaurantName, pendingQuestion }),
       ]);
   let intent = intentResult.intent;
+  let entities = extractedEntities;
 
   // En CONFIRMING la respuesta se interpreta deterministicamente, sin depender de que la IA
   // clasifique bien: "1" (opcion del menu de confirmacion), un "si"/"confirmado" pelado o
@@ -2640,6 +2641,14 @@ async function handleTextMessage(
     (normalizedText.trim() === "1" || isRegionalConfirmation(normalizedText) || isGenericOrderConfirmation(normalizedText))
   ) {
     intent = Intent.CONFIRM;
+    // isGenericOrderConfirmation/isRegionalConfirmation solo matchean si el texto NO trae
+    // ninguna palabra fuera del vocabulario de confirmacion, asi que cualquier entidad que la
+    // IA haya extraido aqui es ruido filtrado del historial reciente (ej: un "efectivo" de un
+    // mensaje anterior), no un dato nuevo del mensaje. Bug real: ese paymentMethod/deliveryType
+    // "fantasma" activaba el bloque de "actualizacion de datos de checkout" en decideOrderFlow,
+    // que corre ANTES de revisar el intent y volvia a mostrar la confirmacion en bucle aunque
+    // el cliente ya hubiera dicho "1".
+    entities = EMPTY_ENTITIES;
   } else if (context.orderFlow.step === OrderFlowStep.CONFIRMING && normalizedText.trim() === "2") {
     intent = Intent.CANCEL;
   } else if (inOrderFlowAlready && isRegionalCancellation(normalizedText)) {

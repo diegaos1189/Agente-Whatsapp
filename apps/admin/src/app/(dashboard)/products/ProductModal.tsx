@@ -84,6 +84,7 @@ function ComboSection({
 export function ProductModal({
   mode,
   product,
+  defaultCategoryId,
   categories,
   allProducts,
   onClose,
@@ -91,13 +92,17 @@ export function ProductModal({
 }: {
   mode: "create" | "edit";
   product?: ProductDTO;
+  /** Categoria preseleccionada al crear: la del filtro activo en la tabla. */
+  defaultCategoryId?: string;
   categories: Array<{ id: string; name: string }>;
   allProducts: ProductDTO[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const router = useRouter();
-  const [categoryId, setCategoryId] = useState(product?.categoryId ?? categories[0]?.id ?? "");
+  const [categoryId, setCategoryId] = useState(
+    product?.categoryId ?? (defaultCategoryId && categories.some((c) => c.id === defaultCategoryId) ? defaultCategoryId : categories[0]?.id ?? ""),
+  );
   const [name, setName] = useState(product?.name ?? "");
   const [price, setPrice] = useState(product ? String(product.price) : "");
   const [unitCount, setUnitCount] = useState(product?.unitCount ? String(product.unitCount) : "");
