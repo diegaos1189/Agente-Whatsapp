@@ -334,7 +334,12 @@ export async function prepareCheckoutSummary(params: {
     };
   }
 
-  const staleByFingerprint = isCheckoutSummaryStale(params.previousCheckout, params.state, params.activeCart);
+  const normalizedState: OrderFlowState = {
+    ...params.state,
+    cart: validation.pricing.repricedCartLines,
+  };
+  const normalizedActiveCart = validation.pricing.repricedActiveCart ?? params.activeCart;
+  const staleByFingerprint = isCheckoutSummaryStale(params.previousCheckout, normalizedState, normalizedActiveCart);
   const previousSummary = params.previousCheckout?.summary ?? null;
   const staleByPricing =
     Boolean(previousSummary) &&
@@ -347,7 +352,7 @@ export async function prepareCheckoutSummary(params: {
   const nextVersion = mustRotateConfirmation
     ? (params.previousCheckout?.version ?? 0) + 1
     : params.previousCheckout?.version ?? 1;
-  const cartFingerprint = computeCheckoutFingerprint(params.state, params.activeCart);
+  const cartFingerprint = computeCheckoutFingerprint(normalizedState, normalizedActiveCart);
   const summary: CheckoutSummary = {
     version: nextVersion,
     confirmationId: mustRotateConfirmation ? randomUUID() : params.previousCheckout?.summary?.confirmationId ?? randomUUID(),
@@ -359,10 +364,10 @@ export async function prepareCheckoutSummary(params: {
     tax: validation.pricing.tax,
     total: validation.pricing.total,
     currency: validation.pricing.currency,
-    deliveryType: params.state.deliveryType,
-    deliveryAddress: params.state.address,
-    neighborhood: params.state.neighborhood,
-    paymentMethod: params.state.paymentMethod,
+    deliveryType: normalizedState.deliveryType,
+    deliveryAddress: normalizedState.address,
+    neighborhood: normalizedState.neighborhood,
+    paymentMethod: normalizedState.paymentMethod,
   };
 
   return {

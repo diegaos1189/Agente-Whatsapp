@@ -81,7 +81,13 @@ const state = vi.hoisted(() => ({
     agentName: "Lina",
     welcomeMessage: "Bienvenido a Pollos Test",
     assistantTone: "amable",
+    acceptsDelivery: true,
+    acceptsPickup: true,
     acceptsScheduledOrders: false,
+    minimumDeliveryOrder: 0,
+    deliveryCoverageKeywords: [] as string[],
+    estimatedPrepMinutes: 45,
+    transferAccounts: [] as any[],
     outOfHoursMessage: "Cerrado",
     acceptedPaymentMethods: ["CASH"],
     currency: "COP",
@@ -474,6 +480,9 @@ vi.mock("../src/modules/conversation/whatsappAudioService.js", () => ({
 
 import { handleIncomingMessage } from "../src/modules/conversation/conversationService.js";
 import { extractEntities } from "../src/modules/ai/entityExtractor.js";
+import { classifyIntent } from "../src/modules/ai/intentClassifier.js";
+import { createOrder } from "../src/modules/orders/orderService.js";
+import { getEffectivePrice } from "../src/modules/products/productService.js";
 import { OrderFlowStep } from "@pollos/shared";
 
 function seedInSides(overrides: Partial<any> = {}) {
@@ -515,6 +524,60 @@ function seedInSides(overrides: Partial<any> = {}) {
       pendingCategoryIds: null,
       pendingProductIds: null,
       pendingSideDrink: { step: "SIDES", stage: "CONFIRM", optionIds: [] },
+      activeCart: null,
+      checkout: null,
+      repeatOrder: { pendingReplacement: null, lastSourceOrderId: null, lastSourceOrderCode: null },
+      orderTracking: { lastReferencedOrderId: null, lastReferencedOrderCode: null },
+      upsell: null,
+      ...overrides,
+    },
+    lastMessageAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  state.conversations.push(conversation);
+  return { contact, conversation };
+}
+
+function seedActiveConversation(overrides: Partial<any> = {}) {
+  const contact = {
+    id: `contact-${state.nextContactId++}`,
+    phone: "573001112233",
+    name: "Diego",
+    cartRecoveryOptOutAt: null,
+    cartRecoveryOptOutReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  state.contacts.push(contact);
+
+  const conversation = {
+    id: `conv-${state.nextConversationId++}`,
+    contactId: contact.id,
+    status: ConversationStatus.ACTIVE,
+    isHandoff: false,
+    handoffReason: null,
+    assignedAdminUserId: null,
+    takenAt: null,
+    failedAttempts: 0,
+    context: {
+      orderFlow: {
+        step: OrderFlowStep.IDLE,
+        cart: [],
+        deliveryType: null,
+        paymentMethod: null,
+        address: null,
+        neighborhood: null,
+        reference: null,
+        contactPhone: null,
+        sidesAsked: false,
+        drinksAsked: false,
+        pendingProduct: null,
+      },
+      pendingMenu: null,
+      pendingCategoryIds: null,
+      pendingProductIds: null,
+      pendingSideDrink: null,
       activeCart: null,
       checkout: null,
       repeatOrder: { pendingReplacement: null, lastSourceOrderId: null, lastSourceOrderCode: null },
@@ -763,5 +826,401 @@ describe("acompañantes/bebidas guiados por numero", () => {
     const conv = state.conversations.find((c) => c.contactId === contact.id)!;
     expect(conv.context.pendingSideDrink).toEqual({ step: "SIDES", stage: "CONFIRM", optionIds: [] });
     expect(conv.context.orderFlow.step).toBe(OrderFlowStep.ASK_SIDES);
+  });
+
+  it("flujo completo: tras la primera confirmacion crea el pedido sin volver a confirmarlo", async () => {
+    const { contact } = seedActiveConversation();
+
+    vi.mocked(classifyIntent).mockImplementation(async ({ message }: { message: string }) => {
+      const normalized = message.trim().toLowerCase();
+      if (normalized === "quiero un pollo asado entero") return { intent: "ORDER_PRODUCT", confidence: 1 };
+      if (normalized === "1") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "domicilio") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "efectivo") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "si") return { intent: "CONFIRM", confidence: 1 };
+      return { intent: "UNKNOWN", confidence: 0 };
+    });
+
+    vi.mocked(extractEntities).mockImplementation(async ({ message }: { message: string }) => {
+      const normalized = message.trim().toLowerCase();
+      if (normalized === "quiero un pollo asado entero") {
+        return {
+          productType: "Pollo Asado Entero",
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "1") {
+        return {
+          productType: null,
+          quantity: 1,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "domicilio") {
+        return {
+          productType: null,
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: "DELIVERY",
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "cra 50 #20-30") {
+        return {
+          productType: null,
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: "Cra 50 #20-30",
+          neighborhood: "Laureles",
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "efectivo") {
+        return {
+          productType: null,
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: "CASH",
+          name: null,
+          contactPhone: null,
+        };
+      }
+      return {
+        productType: null,
+        quantity: null,
+        size: null,
+        sides: null,
+        deliveryType: null,
+        address: null,
+        neighborhood: null,
+        reference: null,
+        paymentMethod: null,
+        name: null,
+        contactPhone: null,
+      };
+    });
+
+    vi.mocked(createOrder).mockResolvedValueOnce({
+      createdNow: true,
+      order: {
+        id: "order-1",
+        code: "POL-TEST-1",
+        total: 48000,
+        paymentMethod: "CASH",
+      },
+    } as Awaited<ReturnType<typeof createOrder>>);
+
+    await sendMessage(contact.phone, "quiero un pollo asado entero", "wamid-1");
+    await sendMessage(contact.phone, "1", "wamid-2");
+    await sendMessage(contact.phone, "2", "wamid-3");
+    await sendMessage(contact.phone, "2", "wamid-4");
+    await sendMessage(contact.phone, "domicilio", "wamid-5");
+    await sendMessage(contact.phone, "Cra 50 #20-30", "wamid-6");
+    await sendMessage(contact.phone, "efectivo", "wamid-7");
+    await sendMessage(contact.phone, "si", "wamid-8");
+
+    const confirmationMessages = state.sentTexts.filter(
+      (item) => item.body.includes("Si, confirmar") || /confirma su pedido/i.test(item.body),
+    );
+
+    expect(confirmationMessages).toHaveLength(1);
+    expect(state.sentTexts.at(-1)!.body).toContain("Pedido POL-TEST-1 creado con exito.");
+    expect(state.sentTexts.at(-1)!.body).not.toMatch(/confirma su pedido/i);
+    expect(vi.mocked(createOrder)).toHaveBeenCalledTimes(1);
+
+    const conv = state.conversations.find((c) => c.contactId === contact.id)!;
+    expect(conv.status).toBe(ConversationStatus.CLOSED);
+  });
+
+  it("flujo completo pickup: confirma una sola vez y crea el pedido sin pedir direccion", async () => {
+    const { contact } = seedActiveConversation();
+
+    vi.mocked(classifyIntent).mockImplementation(async ({ message }: { message: string }) => {
+      const normalized = message.trim().toLowerCase();
+      if (normalized === "quiero un pollo asado entero") return { intent: "ORDER_PRODUCT", confidence: 1 };
+      if (normalized === "1") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "recoger") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "efectivo") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "si") return { intent: "CONFIRM", confidence: 1 };
+      return { intent: "UNKNOWN", confidence: 0 };
+    });
+
+    vi.mocked(extractEntities).mockImplementation(async ({ message }: { message: string }) => {
+      const normalized = message.trim().toLowerCase();
+      if (normalized === "quiero un pollo asado entero") {
+        return {
+          productType: "Pollo Asado Entero",
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "1") {
+        return {
+          productType: null,
+          quantity: 1,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "recoger") {
+        return {
+          productType: null,
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: "PICKUP",
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "efectivo") {
+        return {
+          productType: null,
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: "CASH",
+          name: null,
+          contactPhone: null,
+        };
+      }
+      return {
+        productType: null,
+        quantity: null,
+        size: null,
+        sides: null,
+        deliveryType: null,
+        address: null,
+        neighborhood: null,
+        reference: null,
+        paymentMethod: null,
+        name: null,
+        contactPhone: null,
+      };
+    });
+
+    vi.mocked(createOrder).mockResolvedValueOnce({
+      createdNow: true,
+      order: {
+        id: "order-2",
+        code: "POL-TEST-2",
+        total: 48000,
+        paymentMethod: "CASH",
+      },
+    } as Awaited<ReturnType<typeof createOrder>>);
+
+    await sendMessage(contact.phone, "quiero un pollo asado entero", "wamid-p1");
+    await sendMessage(contact.phone, "1", "wamid-p2");
+    await sendMessage(contact.phone, "2", "wamid-p3");
+    await sendMessage(contact.phone, "2", "wamid-p4");
+    await sendMessage(contact.phone, "recoger", "wamid-p5");
+    await sendMessage(contact.phone, "efectivo", "wamid-p6");
+    await sendMessage(contact.phone, "si", "wamid-p7");
+
+    const allBodies = state.sentTexts.map((item) => item.body).join("\n");
+    const confirmationMessages = state.sentTexts.filter(
+      (item) => item.body.includes("Si, confirmar") || /confirma su pedido/i.test(item.body),
+    );
+
+    expect(confirmationMessages).toHaveLength(1);
+    expect(allBodies).not.toContain("Cra 50");
+    expect(state.sentTexts.at(-1)!.body).toContain("Pedido POL-TEST-2 creado con exito.");
+    expect(vi.mocked(createOrder)).toHaveBeenCalled();
+    expect(vi.mocked(createOrder).mock.calls.at(-1)?.[0]).toMatchObject({
+      deliveryType: "PICKUP",
+      paymentMethod: "CASH",
+      total: 48000,
+    });
+  });
+
+  it("si el precio cambia antes del si final, pide una nueva confirmacion una sola vez y luego crea el pedido", async () => {
+    const { contact } = seedActiveConversation();
+    let effectivePrice = 48000;
+
+    vi.mocked(classifyIntent).mockImplementation(async ({ message }: { message: string }) => {
+      const normalized = message.trim().toLowerCase();
+      if (normalized === "quiero un pollo asado entero") return { intent: "ORDER_PRODUCT", confidence: 1 };
+      if (normalized === "1") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "recoger") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "efectivo") return { intent: "PROVIDE_INFO", confidence: 1 };
+      if (normalized === "si") return { intent: "CONFIRM", confidence: 1 };
+      return { intent: "UNKNOWN", confidence: 0 };
+    });
+
+    vi.mocked(extractEntities).mockImplementation(async ({ message }: { message: string }) => {
+      const normalized = message.trim().toLowerCase();
+      if (normalized === "quiero un pollo asado entero") {
+        return {
+          productType: "Pollo Asado Entero",
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "1") {
+        return {
+          productType: null,
+          quantity: 1,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "recoger") {
+        return {
+          productType: null,
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: "PICKUP",
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: null,
+          name: null,
+          contactPhone: null,
+        };
+      }
+      if (normalized === "efectivo") {
+        return {
+          productType: null,
+          quantity: null,
+          size: null,
+          sides: null,
+          deliveryType: null,
+          address: null,
+          neighborhood: null,
+          reference: null,
+          paymentMethod: "CASH",
+          name: null,
+          contactPhone: null,
+        };
+      }
+      return {
+        productType: null,
+        quantity: null,
+        size: null,
+        sides: null,
+        deliveryType: null,
+        address: null,
+        neighborhood: null,
+        reference: null,
+        paymentMethod: null,
+        name: null,
+        contactPhone: null,
+      };
+    });
+
+    vi.mocked(getEffectivePrice).mockImplementation(async (_id: string, basePrice: number) => {
+      return _id === "prod-entero" ? effectivePrice : basePrice;
+    });
+
+    vi.mocked(createOrder).mockResolvedValueOnce({
+      createdNow: true,
+      order: {
+        id: "order-3",
+        code: "POL-TEST-3",
+        total: 50000,
+        paymentMethod: "CASH",
+      },
+    } as Awaited<ReturnType<typeof createOrder>>);
+
+    await sendMessage(contact.phone, "quiero un pollo asado entero", "wamid-r1");
+    await sendMessage(contact.phone, "1", "wamid-r2");
+    await sendMessage(contact.phone, "2", "wamid-r3");
+    await sendMessage(contact.phone, "2", "wamid-r4");
+    await sendMessage(contact.phone, "recoger", "wamid-r5");
+    await sendMessage(contact.phone, "efectivo", "wamid-r6");
+
+    effectivePrice = 50000;
+
+    await sendMessage(contact.phone, "si", "wamid-r7");
+    await sendMessage(contact.phone, "si", "wamid-r8");
+
+    const repricingConfirmationMessages = state.sentTexts.filter(
+      (item) =>
+        item.body.includes("Si, confirmar") ||
+        /confirma su pedido/i.test(item.body) ||
+        /valores finales actualizados/i.test(item.body),
+    );
+
+    expect(repricingConfirmationMessages).toHaveLength(2);
+    expect(repricingConfirmationMessages[1]!.body).toMatch(/actualizados|Total: 50,000 COP/i);
+    expect(state.sentTexts.at(-1)!.body).toContain("Pedido POL-TEST-3 creado con exito.");
+    expect(vi.mocked(createOrder)).toHaveBeenCalled();
+    expect(vi.mocked(createOrder).mock.calls.at(-1)?.[0]).toMatchObject({
+      deliveryType: "PICKUP",
+      paymentMethod: "CASH",
+      total: 50000,
+    });
   });
 });
