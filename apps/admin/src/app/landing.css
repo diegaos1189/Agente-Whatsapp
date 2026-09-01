@@ -435,6 +435,7 @@
   padding: 9px 12px;
   font-size: 12.5px;
   max-width: 85%;
+  color: #14181a;
   opacity: 0;
   animation: lp-bubble-in 0.5s ease forwards;
 }
