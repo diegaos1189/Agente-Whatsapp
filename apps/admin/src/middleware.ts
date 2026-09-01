@@ -88,5 +88,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|api/login|api/public-settings|_next/static|_next/image|favicon.ico|icon.svg|$).*)"],
+  matcher: ["/((?!login|api/login|api/public-settings|api/public-lead|_next/static|_next/image|favicon.ico|icon.svg|$).*)"],
 };

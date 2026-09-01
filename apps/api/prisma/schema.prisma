@@ -611,6 +611,23 @@ model PlatformRestaurant {
   @@map("platform_restaurants")
 }
 
+/// Lead capturado desde el formulario "Quiero una demo" de la landing publica (/).
+/// No requiere autenticacion para crearse (envio publico); solo el dueño de la plataforma
+/// puede listarlos/actualizarlos desde /super-admin/leads.
+model Lead {
+  id           String   @id @default(cuid())
+  businessName String
+  contactName  String
+  phone        String
+  email        String   @default("")
+  message      String   @default("")
+  status       String   @default("NEW") // "NEW" | "CONTACTED" | "CLOSED"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("leads")
+}
+
 // ---------- Usuarios del panel admin ----------
 
 model AdminUser {

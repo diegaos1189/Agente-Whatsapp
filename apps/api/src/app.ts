@@ -14,6 +14,7 @@ import { metricsRoutes } from "./routes/metrics.js";
 import { adminUserRoutes } from "./routes/adminUsers.js";
 import { faqRoutes } from "./routes/faqs.js";
 import { platformRestaurantRoutes } from "./routes/platformRestaurants.js";
+import { leadRoutes } from "./routes/leads.js";
 import { paymentRoutes } from "./routes/payments.js";
 import { paymentWebhookRoutes } from "./routes/paymentWebhooks.js";
 
@@ -88,6 +89,7 @@ export function buildApp() {
   app.register(adminUserRoutes);
   app.register(faqRoutes);
   app.register(platformRestaurantRoutes);
+  app.register(leadRoutes);
 
   return app;
 }

@@ -1,6 +1,10 @@
+import { LeadForm } from "./LeadForm";
+
 const PRODUCT_NAME = "Pedix";
-const CONTACT_EMAIL = "contacto@kenzygroup.co";
-const DEMO_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Quiero una demo de ${PRODUCT_NAME}`)}`;
+const WHATSAPP_NUMBER = "573015625504";
+const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+  `Hola, quiero una demo de ${PRODUCT_NAME} para mi negocio`,
+)}`;
 
 const FEATURE_GROUPS: Array<{
   title: string;
@@ -88,7 +92,9 @@ export function LandingContent() {
       >
         <span style={{ fontWeight: 800, fontSize: "1.25rem", color: "#2a8f17" }}>{PRODUCT_NAME}</span>
         <a
-          href={DEMO_MAILTO}
+          href={WHATSAPP_LINK}
+          target="_blank"
+          rel="noopener noreferrer"
           style={{
             background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
             color: "#fff",
@@ -100,7 +106,7 @@ export function LandingContent() {
             boxShadow: "0 4px 14px rgba(49,167,27,0.35)",
           }}
         >
-          Solicita una demo
+          Escríbenos por WhatsApp
         </a>
       </header>
 
@@ -140,7 +146,9 @@ export function LandingContent() {
           </p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <a
-              href={DEMO_MAILTO}
+              href={WHATSAPP_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
               style={{
                 background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
                 color: "#fff",
@@ -152,10 +160,10 @@ export function LandingContent() {
                 boxShadow: "0 4px 14px rgba(49,167,27,0.35)",
               }}
             >
-              Solicita una demo
+              Escríbenos por WhatsApp
             </a>
             <a
-              href="#servicios"
+              href="#contacto"
               style={{
                 border: "1.5px solid #31a71b",
                 color: "#2a8f17",
@@ -166,7 +174,7 @@ export function LandingContent() {
                 textDecoration: "none",
               }}
             >
-              Ver todo lo que incluye
+              Déjanos tus datos
             </a>
           </div>
         </div>
@@ -283,34 +291,45 @@ export function LandingContent() {
         </div>
       </section>
 
-      {/* CTA final */}
+      {/* Contacto */}
       <section
+        id="contacto"
         style={{
           background: "linear-gradient(135deg, #3fbf25, #2a8f17)",
           color: "#fff",
           padding: "56px 32px",
-          textAlign: "center",
         }}
       >
-        <h2 style={{ fontSize: "1.75rem", fontWeight: 800, margin: "0 0 12px" }}>
-          Lleva {PRODUCT_NAME} a tu negocio
-        </h2>
-        <p style={{ opacity: 0.9, margin: "0 0 24px" }}>Te lo configuramos y lo dejamos funcionando en minutos.</p>
-        <a
-          href={DEMO_MAILTO}
-          style={{
-            display: "inline-block",
-            background: "#fff",
-            color: "#2a8f17",
-            fontWeight: 800,
-            fontSize: 15,
-            padding: "13px 28px",
-            borderRadius: 999,
-            textDecoration: "none",
-          }}
-        >
-          Solicita una demo
-        </a>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <h2 style={{ fontSize: "1.75rem", fontWeight: 800, margin: "0 0 12px" }}>
+            Lleva {PRODUCT_NAME} a tu negocio
+          </h2>
+          <p style={{ opacity: 0.9, margin: "0 0 24px" }}>Te lo configuramos y lo dejamos funcionando en minutos.</p>
+          <a
+            href={WHATSAPP_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-block",
+              background: "#fff",
+              color: "#2a8f17",
+              fontWeight: 800,
+              fontSize: 15,
+              padding: "13px 28px",
+              borderRadius: 999,
+              textDecoration: "none",
+            }}
+          >
+            Escríbenos por WhatsApp
+          </a>
+        </div>
+
+        <div style={{ maxWidth: 480, margin: "0 auto", background: "#fff", borderRadius: 20, padding: "28px 24px" }}>
+          <p style={{ color: "#252527", fontWeight: 700, fontSize: 15, textAlign: "center", margin: "0 0 16px" }}>
+            O prefieres que te contactemos nosotros:
+          </p>
+          <LeadForm />
+        </div>
       </section>
 
       <footer style={{ padding: "24px 32px", textAlign: "center", color: "#4d4c52", fontSize: 12.5 }}>
