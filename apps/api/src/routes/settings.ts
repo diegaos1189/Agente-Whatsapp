@@ -106,7 +106,7 @@ export async function settingsRoutes(app: FastifyInstance) {
     };
   });
 
-  app.put("/api/settings", async (request) => {
+  app.put("/api/settings", async (request, reply) => {
     requireAdmin(request);
     const body = settingsUpdateSchema.parse(request.body);
     // Si el campo llego igual a como se mostro (enmascarado) o vacio, no se toca el valor real guardado.
@@ -115,6 +115,20 @@ export async function settingsRoutes(app: FastifyInstance) {
     if (isUnchangedMask(body.whatsappVerifyToken) || body.whatsappVerifyToken === "") delete body.whatsappVerifyToken;
 
     const restaurantId = await resolveRestaurantId(request);
+
+    // El numero de WhatsApp es lo que usa el webhook para saber a que restaurante entra cada
+    // mensaje, asi que no puede estar repetido: con dos negocios apuntando al mismo numero,
+    // los chats de uno caerian en el panel del otro segun cual resuelva primero la consulta.
+    if (body.whatsappPhoneNumberId) {
+      const taken = await prisma.businessSettings.findFirst({
+        where: { whatsappPhoneNumberId: body.whatsappPhoneNumberId, restaurantId: { not: restaurantId } },
+        select: { restaurantId: true },
+      });
+      if (taken) {
+        return reply.status(409).send({ error: "Ese numero de WhatsApp ya esta configurado en otro restaurante" });
+      }
+    }
+
     const current = await prisma.businessSettings.findUnique({ where: { restaurantId } });
 
     const updated = current

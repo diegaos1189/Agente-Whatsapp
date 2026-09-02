@@ -10,6 +10,7 @@ import { SidebarShell } from "@/app/(dashboard)/SidebarShell";
 import { LogoutButton } from "@/app/(dashboard)/LogoutButton";
 import { NavIcon, type NavIconName } from "@/app/(dashboard)/NavIcon";
 import { RestaurantScope } from "@/components/RestaurantScope";
+import { NotificationBell } from "@/components/NotificationBell";
 import { SidebarLogoUploader } from "./SidebarLogoUploader";
 
 /**
@@ -78,7 +79,14 @@ export default async function RestaurantPanelLayout({
       <RestaurantScope restaurantId={restaurant.id} />
       <SidebarShell
         title={restaurant.name}
-        logoSlot={<SidebarLogoUploader logoUrl={logoUrl} restaurantName={restaurant.name} />}
+        logoUrl={logoUrl}
+        logoSlot={
+          // Guardar el logo es cambiar la configuracion, y eso es solo del administrador: a un
+          // empleado se le muestra el logo como imagen, sin el boton que le daria un 403.
+          session.role === ADMIN_ROLE ? (
+            <SidebarLogoUploader logoUrl={logoUrl} restaurantName={restaurant.name} />
+          ) : undefined
+        }
         footer={
           <>
             {isPlatformUser && (
@@ -104,7 +112,14 @@ export default async function RestaurantPanelLayout({
           ))}
         </nav>
       </SidebarShell>
-      <main className="content">{children}</main>
+      <main className="content">
+        {hasPermission(session, "conversations") && (
+          <div className="desktop-topbar">
+            <NotificationBell basePath={`/${restaurant.slug}`} />
+          </div>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

@@ -101,11 +101,13 @@ async function main() {
   await prisma.promotion.createMany({
     data: [
       {
+        restaurantId: LOCAL_RESTAURANT_ID,
         title: "Miercoles de Combo",
         description: "10% de descuento en el Combo Familiar todos los miercoles",
         isActive: true,
       },
       {
+        restaurantId: LOCAL_RESTAURANT_ID,
         title: "2x1 en Gaseosa Personal",
         description: "Llevando cualquier combo, la segunda gaseosa personal es gratis",
         isActive: true,

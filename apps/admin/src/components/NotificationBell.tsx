@@ -5,7 +5,11 @@ import Link from "next/link";
 import { apiClientFetch } from "@/lib/apiClient";
 import type { ConversationSummaryDTO } from "@pollos/shared";
 
-export function NotificationBell() {
+/**
+ * Chats esperando a un humano. La consulta sale acotada al restaurante del panel abierto
+ * (apiClientFetch agrega el header), asi que en /<slug> cuenta solo los de ese negocio.
+ */
+export function NotificationBell({ basePath = "" }: { basePath?: string }) {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -29,7 +33,7 @@ export function NotificationBell() {
   }, []);
 
   return (
-    <Link href="/conversations" className="notif-bell" aria-label="Conversaciones esperando respuesta">
+    <Link href={`${basePath}/conversations`} className="notif-bell" aria-label="Conversaciones esperando respuesta">
       🔔
       {count > 0 && <span className="notif-bell-badge">{count}</span>}
     </Link>
