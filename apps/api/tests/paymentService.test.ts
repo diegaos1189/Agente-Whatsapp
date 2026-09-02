@@ -16,6 +16,11 @@ function matchWhere(row: any, where: any): boolean {
   if (!where) return true;
   return Object.entries(where).every(([key, value]) => {
     if (key === "OR" && Array.isArray(value)) return value.some((part) => matchWhere(row, part));
+    // Filtro por la relacion: los pagos no llevan restaurante propio, se acotan por su pedido.
+    if (key === "order" && typeof value === "object" && value !== null) {
+      const order = state.orders.find((item) => item.id === row.orderId);
+      return Boolean(order) && matchWhere(order, value);
+    }
     if (typeof value === "object" && value !== null) {
       if ("in" in value) return value.in.includes(row[key]);
       if ("lte" in value) return row[key] <= value.lte;
@@ -201,6 +206,7 @@ import {
 function seedOrder(overrides: Partial<any> = {}) {
   const order = {
     id: "order-1",
+    restaurantId: "local-deployment",
     code: "POL-1842",
     status: "RECEIVED",
     paymentMethod: "CASH",
@@ -598,7 +604,7 @@ describe("paymentService", () => {
   it("TEST 30: reconciliation mismatch, genera revision", async () => {
     seedOrder();
     seedPayment({ createdAt: new Date("2026-08-20T08:00:00.000Z"), provider: "MOCK" });
-    const result = await reconcilePayments({ olderThanMinutes: 30 });
+    const result = await reconcilePayments({ restaurantId: "local-deployment", olderThanMinutes: 30 });
     expect(result.issuesCreated).toBe(1);
   });
 });

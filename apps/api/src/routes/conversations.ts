@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/prisma.js";
+import { resolveRestaurantId } from "../modules/platform/restaurantContext.js";
 import { ConversationStatus, HandoffReason, MessageDirection, MessageType } from "@pollos/shared";
 import type { ConversationDetailDTO, ConversationSummaryDTO, MessageDTO, PendingOrderDTO } from "@pollos/shared";
 import { getWhatsAppClient } from "../modules/whatsapp/whatsappClient.js";
@@ -158,11 +159,24 @@ function extractPendingOrder(context: unknown): PendingOrderDTO | null {
   };
 }
 
+/**
+ * Confirma que la conversacion existe DENTRO del restaurante del request. Los endpoints que
+ * delegan en un servicio pasandole solo el id (guardar/confirmar pedido pendiente) necesitan
+ * este chequeo explicito: sin el, el panel de un negocio podria tocar el chat de otro.
+ */
+async function conversationBelongsToRequest(request: FastifyRequest, conversationId: string): Promise<boolean> {
+  const found = await prisma.conversation.findFirst({
+    where: { id: conversationId, restaurantId: await resolveRestaurantId(request) },
+    select: { id: true },
+  });
+  return Boolean(found);
+}
+
 export async function conversationRoutes(app: FastifyInstance) {
   app.get("/api/conversations", async (request) => {
     requireConversationPermission(getAdminActor(request));
     const conversations = await prisma.conversation.findMany({
-      where: { status: { not: ConversationStatus.CLOSED } },
+      where: { restaurantId: await resolveRestaurantId(request), status: { not: ConversationStatus.CLOSED } },
       orderBy: { lastMessageAt: "desc" },
       include: {
         contact: true,
@@ -194,8 +208,8 @@ export async function conversationRoutes(app: FastifyInstance) {
   app.get("/api/conversations/:id", async (request, reply) => {
     requireConversationPermission(getAdminActor(request));
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const conversation = await prisma.conversation.findUnique({
-      where: { id },
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
       include: { contact: true, assignedAdminUser: true },
     });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
@@ -219,7 +233,9 @@ export async function conversationRoutes(app: FastifyInstance) {
   app.get("/api/conversations/:id/messages", async (request, reply) => {
     requireConversationPermission(getAdminActor(request));
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
 
     const messages = await prisma.message.findMany({
@@ -250,8 +266,8 @@ export async function conversationRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const { body } = z.object({ body: z.string().min(1) }).parse(request.body);
 
-    const conversation = await prisma.conversation.findUnique({
-      where: { id },
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
       include: { contact: true },
     });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
@@ -259,7 +275,7 @@ export async function conversationRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: "Debes tomar la conversacion antes de responder." });
     }
 
-    const client = await getWhatsAppClient();
+    const client = await getWhatsAppClient(conversation.restaurantId);
     const result = await client.sendTextMessage(conversation.contact.phone, body);
     if (!result.success) return reply.status(502).send({ error: "No se pudo enviar el mensaje por WhatsApp" });
 
@@ -284,7 +300,9 @@ export async function conversationRoutes(app: FastifyInstance) {
     requireConversationPermission(actor);
     const { id } = z.object({ id: z.string() }).parse(request.params);
 
-    const current = await prisma.conversation.findUnique({ where: { id } });
+    const current = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!current) return reply.status(404).send({ error: "Conversacion no encontrada" });
 
     if (current.status === ConversationStatus.HUMAN && current.assignedAdminUserId === actor.id) {
@@ -318,7 +336,9 @@ export async function conversationRoutes(app: FastifyInstance) {
     requireConversationPermission(actor);
     const { id } = z.object({ id: z.string() }).parse(request.params);
 
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
     if (!canAdminReply(conversation, actor.id)) {
       return reply.status(409).send({ error: "Solo quien la tiene asignada puede soltar la conversacion." });
@@ -342,7 +362,9 @@ export async function conversationRoutes(app: FastifyInstance) {
     requireConversationPermission(actor);
     const { id } = z.object({ id: z.string() }).parse(request.params);
 
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
     if (
       conversation.status === ConversationStatus.HUMAN &&
@@ -376,10 +398,12 @@ export async function conversationRoutes(app: FastifyInstance) {
       .object({ items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })) })
       .parse(request.body);
 
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
 
-    const allProducts = await listAllProductsFlat();
+    const allProducts = await listAllProductsFlat(conversation.restaurantId);
     const cart = await Promise.all(
       items.map(async (item) => {
         const product = allProducts.find((candidate) => candidate.id === item.productId);
@@ -387,7 +411,7 @@ export async function conversationRoutes(app: FastifyInstance) {
           productId: item.productId,
           productName: product?.name ?? "Producto",
           quantity: item.quantity,
-          unitPrice: product ? await getEffectivePrice(product.id, product.price) : 0,
+          unitPrice: product ? await getEffectivePrice(conversation.restaurantId, product.id, product.price) : 0,
         };
       }),
     );
@@ -406,6 +430,9 @@ export async function conversationRoutes(app: FastifyInstance) {
     requireConversationPermission(actor);
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = pendingOrderEditSchema.parse(request.body);
+    if (!(await conversationBelongsToRequest(request, id))) {
+      return reply.status(404).send({ error: "Conversacion no encontrada" });
+    }
 
     try {
       await savePendingOrder(id, {
@@ -427,6 +454,9 @@ export async function conversationRoutes(app: FastifyInstance) {
     requireConversationPermission(actor);
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = pendingOrderEditSchema.parse(request.body);
+    if (!(await conversationBelongsToRequest(request, id))) {
+      return reply.status(404).send({ error: "Conversacion no encontrada" });
+    }
 
     try {
       await confirmPendingOrderWithAi(id, {
@@ -447,7 +477,9 @@ export async function conversationRoutes(app: FastifyInstance) {
     const actor = getAdminActor(request);
     requireConversationPermission(actor);
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
 
     if (!isHumanHandoffStatus(conversation.status) && !conversation.isHandoff) {
@@ -485,7 +517,9 @@ export async function conversationRoutes(app: FastifyInstance) {
     const actor = getAdminActor(request);
     requireConversationPermission(actor);
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!conversation) return reply.status(404).send({ error: "Conversacion no encontrada" });
 
     await prisma.conversation.update({

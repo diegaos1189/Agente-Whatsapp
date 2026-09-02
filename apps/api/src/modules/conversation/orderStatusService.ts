@@ -271,7 +271,7 @@ async function buildOrderTimeline(order: OrderWithItems, settings: OrderStatusBu
   const elapsedMinutes = Math.max(0, Math.round((now.getTime() - order.createdAt.getTime()) / 60000));
   const estimatedTotalMinutes =
     order.deliveryType === DeliveryType.DELIVERY
-      ? await estimateDeliveryMinutes(settings.estimatedPrepMinutes)
+      ? await estimateDeliveryMinutes(order.restaurantId, settings.estimatedPrepMinutes)
       : settings.estimatedPrepMinutes;
   const estimatedRemainingMinutes = Math.max(0, estimatedTotalMinutes - elapsedMinutes);
   const delayMinutes = Math.max(0, elapsedMinutes - estimatedTotalMinutes);

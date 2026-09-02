@@ -325,6 +325,7 @@ export async function findLatestSentCartRecovery(conversationId: string): Promis
 }
 
 export async function syncCartRecoveryFromConversation(params: {
+  restaurantId: string;
   conversationId: string;
   contactId: string;
   context: CartRecoveryContext;
@@ -332,7 +333,7 @@ export async function syncCartRecoveryFromConversation(params: {
 }): Promise<void> {
   if (!params.lastMessageAt) return;
 
-  const settings = await getBusinessSettings();
+  const settings = await getBusinessSettings(params.restaurantId);
   if (!settings.cartRecoveryEnabled) return;
 
   const contact = await prisma.contact.findUnique({
@@ -408,7 +409,6 @@ async function processRecovery(recoveryId: string, now: Date): Promise<void> {
   if (!acquired) return;
 
   try {
-    const settings = await getBusinessSettings();
     const recovery = await db.cartRecovery.findUnique({
       where: { id: recoveryId },
       include: {
@@ -417,6 +417,11 @@ async function processRecovery(recoveryId: string, now: Date): Promise<void> {
       },
     });
     if (!recovery) return;
+
+    // Cada negocio decide si usa recuperacion de carrito, con que mensaje y desde que
+    // numero: todo eso sale del restaurante de ESTA conversacion, no del deployment.
+    const settings = await getBusinessSettings(recovery.conversation.restaurantId);
+    if (!settings.cartRecoveryEnabled) return;
 
     const context = recovery.conversation?.context as CartRecoveryContext | null;
     const eligibility = canSendCartRecovery({
@@ -484,7 +489,7 @@ async function processRecovery(recoveryId: string, now: Date): Promise<void> {
       return;
     }
 
-    const client = await getWhatsAppClient();
+    const client = await getWhatsAppClient(recovery.conversation.restaurantId);
     const sendResult = await client.sendTextMessage(recovery.contact.phone, settings.cartRecoveryMessage);
     if (!sendResult.success) {
       await db.cartRecovery.update({
@@ -520,10 +525,12 @@ async function processRecovery(recoveryId: string, now: Date): Promise<void> {
   }
 }
 
+/**
+ * Barre las recuperaciones vencidas de TODOS los restaurantes. El interruptor de
+ * cartRecoveryEnabled ya no se puede evaluar aca (es por negocio): lo revisa processRecovery
+ * con la configuracion del restaurante de cada conversacion.
+ */
 export async function processDueCartRecoveries(now: Date = new Date()): Promise<void> {
-  const settings = await getBusinessSettings();
-  if (!settings.cartRecoveryEnabled) return;
-
   const dueRecoveries = await db.cartRecovery.findMany({
     where: {
       status: "PENDING",

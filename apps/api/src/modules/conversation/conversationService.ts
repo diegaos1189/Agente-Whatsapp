@@ -137,6 +137,8 @@ const MAX_FAILED_ATTEMPTS = 2;
 const HISTORY_LIMIT = 8;
 
 export interface InboundMessageInput {
+  /** Restaurante al que le escribieron (lo resuelve el webhook por el numero que recibio el mensaje). */
+  restaurantId: string;
   waMessageId: string;
   phone: string;
   name: string | null;
@@ -290,18 +292,18 @@ function buildPersistedConversationContext(context: ConversationContext): Conver
   };
 }
 
-async function buildProductPriceMap(): Promise<Map<string, number>> {
-  const products = await listCatalog();
+async function buildProductPriceMap(restaurantId: string): Promise<Map<string, number>> {
+  const products = await listCatalog(restaurantId);
   const map = new Map<string, number>();
   for (const category of products) {
     for (const product of category.products) {
-      map.set(product.id, await getEffectivePrice(product.id, product.price));
+      map.set(product.id, await getEffectivePrice(restaurantId, product.id, product.price));
     }
   }
   return map;
 }
 
-async function ensureStructuredCart(context: ConversationContext): Promise<StructuredCartState> {
+async function ensureStructuredCart(restaurantId: string, context: ConversationContext): Promise<StructuredCartState> {
   if (context.activeCart && context.activeCart.items.length > 0) {
     return context.activeCart;
   }
@@ -311,9 +313,9 @@ async function ensureStructuredCart(context: ConversationContext): Promise<Struc
     return context.activeCart;
   }
 
-  const categories = await listCatalog();
+  const categories = await listCatalog(restaurantId);
   const allProducts = categories.flatMap((category) => category.products);
-  const priceById = await buildProductPriceMap();
+  const priceById = await buildProductPriceMap(restaurantId);
   context.activeCart = createStructuredCartFromLegacyLines(context.orderFlow.cart, allProducts, priceById);
   context.orderFlow = { ...context.orderFlow, cart: exportStructuredCartLines(context.activeCart) };
   return context.activeCart;
@@ -347,6 +349,7 @@ async function calculateConversationCartPricing(
   settings: Awaited<ReturnType<typeof getBusinessSettings>>,
 ): Promise<ReturnType<typeof calculateCartPricing>> {
   return calculateCartPricing({
+    restaurantId: settings.restaurantId,
     cart: context.orderFlow.cart,
     activeCart: context.activeCart ?? null,
     deliveryType: context.orderFlow.deliveryType,
@@ -431,7 +434,7 @@ async function resumeRecoveredCartConversation(params: {
     return prepared.replyText;
   }
 
-  const cart = await ensureStructuredCart(params.context);
+  const cart = await ensureStructuredCart(params.settings.restaurantId, params.context);
   return generateResponse({
     facts: ["Retomemos su pedido desde donde quedamos.", ...summarizeStructuredCart(cart), ...formatCartPricingFacts(pricing)],
     askNext: pendingQuestion ?? "Por favor, indiqueme como desea continuar con su pedido.",
@@ -440,8 +443,13 @@ async function resumeRecoveredCartConversation(params: {
   });
 }
 
-async function getOrCreateContact(phone: string, name: string | null) {
-  const existing = await prisma.contact.findUnique({ where: { phone } });
+/**
+ * El contacto es por restaurante, no por telefono: el mismo numero que le escribe a dos
+ * negocios de la plataforma son dos clientes distintos, cada uno con su historial y sus
+ * pedidos. Por eso la busqueda va siempre por el par (restaurante, telefono).
+ */
+async function getOrCreateContact(restaurantId: string, phone: string, name: string | null) {
+  const existing = await prisma.contact.findUnique({ where: { restaurantId_phone: { restaurantId, phone } } });
   if (existing) {
     if (name && !existing.name) {
       return prisma.contact.update({ where: { id: existing.id }, data: { name } });
@@ -449,10 +457,10 @@ async function getOrCreateContact(phone: string, name: string | null) {
     return existing;
   }
   try {
-    return await prisma.contact.create({ data: { phone, name } });
+    return await prisma.contact.create({ data: { restaurantId, phone, name } });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      const raced = await prisma.contact.findUnique({ where: { phone } });
+      const raced = await prisma.contact.findUnique({ where: { restaurantId_phone: { restaurantId, phone } } });
       if (raced) return raced;
     }
     throw error;
@@ -461,7 +469,10 @@ async function getOrCreateContact(phone: string, name: string | null) {
 
 const SESSION_TIMEOUT_MINUTES = 30;
 
-async function getOrCreateActiveConversation(contactId: string): Promise<{ conversation: Conversation; isNewSession: boolean }> {
+async function getOrCreateActiveConversation(
+  restaurantId: string,
+  contactId: string,
+): Promise<{ conversation: Conversation; isNewSession: boolean }> {
   const existing = await prisma.conversation.findFirst({
     where: { contactId, status: { in: [ConversationStatus.ACTIVE, ConversationStatus.WAITING_HUMAN, ConversationStatus.HUMAN] } },
     orderBy: { createdAt: "desc" },
@@ -480,7 +491,11 @@ async function getOrCreateActiveConversation(contactId: string): Promise<{ conve
   }
 
   const created = await prisma.conversation.create({
-    data: { contactId, context: toJsonContext({ orderFlow: initialOrderFlowState, activeCart: null, checkout: buildEmptyCheckoutState() }) },
+    data: {
+      restaurantId,
+      contactId,
+      context: toJsonContext({ orderFlow: initialOrderFlowState, activeCart: null, checkout: buildEmptyCheckoutState() }),
+    },
   });
   return { conversation: created, isNewSession: true };
 }
@@ -546,23 +561,30 @@ async function sendAndLog(
     }
   }
 
-  const senderType = options?.senderType ?? mapAutomatedOutboundSenderType();
-  if (!options?.bypassOwnershipCheck && senderType === "BOT") {
-    const freshConversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
-    if (
-      freshConversation &&
-      !canBotAutoReply({
-        status: freshConversation.status,
-        isHandoff: freshConversation.isHandoff,
-        assignedAdminUserId: freshConversation.assignedAdminUserId,
-      })
-    ) {
-      logger.info({ conversationId }, "Respuesta automatica descartada porque la conversacion ya paso a control humano");
-      return { sent: false as const };
-    }
+  // Se relee la conversacion siempre (no solo para el chequeo de handoff) porque de ella
+  // sale el restaurante: cada negocio manda con SUS credenciales de WhatsApp, y sin esto la
+  // respuesta a un cliente saldria desde el numero de otro.
+  const freshConversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!freshConversation) {
+    logger.warn({ conversationId }, "Conversacion inexistente al intentar responder, se descarta el envio");
+    return { sent: false as const };
   }
 
-  const client = await getWhatsAppClient();
+  const senderType = options?.senderType ?? mapAutomatedOutboundSenderType();
+  if (
+    !options?.bypassOwnershipCheck &&
+    senderType === "BOT" &&
+    !canBotAutoReply({
+      status: freshConversation.status,
+      isHandoff: freshConversation.isHandoff,
+      assignedAdminUserId: freshConversation.assignedAdminUserId,
+    })
+  ) {
+    logger.info({ conversationId }, "Respuesta automatica descartada porque la conversacion ya paso a control humano");
+    return { sent: false as const };
+  }
+
+  const client = await getWhatsAppClient(freshConversation.restaurantId);
   await client.sendTextMessage(phone, safeBody);
   await saveMessage(conversationId, MessageDirection.OUTBOUND, MessageType.TEXT, safeBody, {
     senderType,
@@ -676,7 +698,7 @@ export async function confirmPendingOrderWithAi(conversationId: string, edit: Pe
   if (!conversation) throw new Error("Conversacion no encontrada");
   if (edit.cart.length === 0) throw new Error("El pedido no tiene productos");
 
-  const settings = await getBusinessSettings();
+  const settings = await getBusinessSettings(conversation.restaurantId);
   const nextOrderFlow: OrderFlowState = {
     ...initialOrderFlowState,
     step: OrderFlowStep.CONFIRMING,
@@ -804,11 +826,12 @@ async function escalateToHuman(params: {
 }
 
 async function resolveProductFromEntities(
+  restaurantId: string,
   entities: ExtractedEntities,
   fallbackText: string,
 ): Promise<ProductResolutionResult> {
   const query = [entities.productType, entities.size].filter(Boolean).join(" ") || fallbackText;
-  const result = await resolveProductReference(query);
+  const result = await resolveProductReference(restaurantId, query);
   if (result.status !== "MATCHED" || !result.product) return result;
   const product = result.product.product;
   return {
@@ -817,7 +840,7 @@ async function resolveProductFromEntities(
       ...result.product,
       product: {
         ...product,
-        price: await getEffectivePrice(product.id, product.price),
+        price: await getEffectivePrice(restaurantId, product.id, product.price),
       },
     },
   };
@@ -842,14 +865,18 @@ function isSideAlreadyPartOfProduct(sideText: string, productNames: string[]): b
   return productNames.some((name) => normalizeText(name).includes(normalized));
 }
 
-async function resolveSidesFromEntities(entities: ExtractedEntities, productNamesToIgnore: string[] = []): Promise<ResolvedSides> {
+async function resolveSidesFromEntities(
+  restaurantId: string,
+  entities: ExtractedEntities,
+  productNamesToIgnore: string[] = [],
+): Promise<ResolvedSides> {
   if (!entities.sides || entities.sides.length === 0) return { matched: [], unmatchedTexts: [] };
   const matched: Array<{ id: string; name: string; price: number; categoryName: string }> = [];
   const unmatchedTexts: string[] = [];
   for (const rawSide of entities.sides) {
     if (isSideAlreadyPartOfProduct(rawSide, productNamesToIgnore)) continue;
     const side = rawSide;
-    const product = await findBestProductMatch(side);
+    const product = await findBestProductMatch(restaurantId, side);
     // Un "acompanante" nunca puede ser un combo — un combo es un paquete completo, no algo
     // que se agrega suelto. Bug real: el cliente pregunto "¿tienen gaseosas?" (una consulta,
     // no un pedido) y "gaseosas" matcheo por palabras contra un Combo Familiar (que incluye
@@ -859,7 +886,7 @@ async function resolveSidesFromEntities(entities: ExtractedEntities, productName
       matched.push({
         id: product.id,
         name: product.name,
-        price: await getEffectivePrice(product.id, product.price),
+        price: await getEffectivePrice(restaurantId, product.id, product.price),
         categoryName: product.categoryName,
       });
     } else {
@@ -870,6 +897,7 @@ async function resolveSidesFromEntities(entities: ExtractedEntities, productName
 }
 
 async function handleOrderCreation(params: {
+  restaurantId: string;
   conversationId: string;
   contactId: string;
   phone: string;
@@ -878,7 +906,7 @@ async function handleOrderCreation(params: {
   activeCart: StructuredCartState | null;
   checkout: CheckoutStateSnapshot | null;
 }) {
-  const settings = await getBusinessSettings();
+  const settings = await getBusinessSettings(params.restaurantId);
   const prepared = await prepareCheckoutSummary({
     state: params.state,
     activeCart: params.activeCart,
@@ -960,6 +988,7 @@ async function handleOrderCreation(params: {
   }
 
   const { order, createdNow } = await createOrder({
+    restaurantId: settings.restaurantId,
     confirmationId: currentCheckout.summary.confirmationId,
     contactId: params.contactId,
     phone: params.phone,
@@ -1196,7 +1225,7 @@ export async function notifyPaymentConfirmed(orderId: string): Promise<void> {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { contact: true } });
   if (!order) return;
 
-  const { conversation } = await getOrCreateActiveConversation(order.contactId);
+  const { conversation } = await getOrCreateActiveConversation(order.restaurantId, order.contactId);
   await sendAndLog(
     conversation.id,
     order.contact.phone,
@@ -1219,7 +1248,7 @@ export async function notifyOrderStatusChange(orderId: string, status: string): 
   });
   if (!message) return;
 
-  const { conversation } = await getOrCreateActiveConversation(order.contactId);
+  const { conversation } = await getOrCreateActiveConversation(order.restaurantId, order.contactId);
   await sendAndLog(conversation.id, order.contact.phone, message);
 
   // Pedido cerrado (entregado/cancelado): archivamos la conversacion de una vez,
@@ -1243,7 +1272,7 @@ export async function notifyManualOrderConfirmation(orderId: string): Promise<vo
   });
   if (!order) return;
 
-  const settings = await getBusinessSettings();
+  const settings = await getBusinessSettings(order.restaurantId);
   const itemLines = order.items.map(
     (i) => `${i.quantity}x ${i.productName ?? i.product?.name ?? "Producto eliminado"} - ${formatCurrency(i.quantity * i.unitPrice, settings.currency)}`,
   );
@@ -1264,7 +1293,7 @@ export async function notifyManualOrderConfirmation(orderId: string): Promise<vo
     tone: settings.assistantTone,
   });
 
-  const { conversation } = await getOrCreateActiveConversation(order.contactId);
+  const { conversation } = await getOrCreateActiveConversation(order.restaurantId, order.contactId);
   await sendAndLog(conversation.id, order.contact.phone, message);
 }
 
@@ -1280,7 +1309,7 @@ export async function notifyOrderCorrection(orderId: string): Promise<void> {
   });
   if (!order) return;
 
-  const settings = await getBusinessSettings();
+  const settings = await getBusinessSettings(order.restaurantId);
   const itemLines = order.items.map(
     (i) => `${i.quantity}x ${i.productName ?? i.product?.name ?? "Producto eliminado"} - ${formatCurrency(i.quantity * i.unitPrice, settings.currency)}`,
   );
@@ -1299,7 +1328,7 @@ export async function notifyOrderCorrection(orderId: string): Promise<void> {
     allowGreeting: false,
   });
 
-  const { conversation } = await getOrCreateActiveConversation(order.contactId);
+  const { conversation } = await getOrCreateActiveConversation(order.restaurantId, order.contactId);
   await sendAndLog(conversation.id, order.contact.phone, message);
 }
 
@@ -1383,7 +1412,7 @@ export async function notifyOrderOperationalRisk(params: {
   if (sentAlerts.length >= 2) return;
   if (sentAlerts.length === 1 && params.delayMinutes < getOperationalAlertFollowupThreshold(params.reason)) return;
 
-  const { conversation } = await getOrCreateActiveConversation(order.contactId);
+  const { conversation } = await getOrCreateActiveConversation(order.restaurantId, order.contactId);
   const message = buildOperationalRiskCustomerMessage({
     orderCode: order.code,
     reason: params.reason,
@@ -1428,7 +1457,7 @@ export async function handleIncomingMessage(input: InboundMessageInput): Promise
     return;
   }
 
-  const contact = await getOrCreateContact(input.phone, input.name);
+  const contact = await getOrCreateContact(input.restaurantId, input.phone, input.name);
   const enqueued = await contactMessageProcessingCoordinator.enqueueIncomingMessage({
     waMessageId: input.waMessageId,
     contactId: contact.id,
@@ -1456,6 +1485,9 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
     throw new Error(`Contacto no encontrado para procesamiento serializado: ${contactId}`);
   }
   const input: InboundMessageInput = {
+    // El restaurante viene del contacto, no del mensaje encolado: es la misma fuente de
+    // verdad que uso el webhook al crearlo y sobrevive a reintentos de la cola.
+    restaurantId: contact.restaurantId,
     waMessageId: queued.waMessageId,
     phone: queued.fromPhone,
     name: queued.customerName,
@@ -1465,7 +1497,7 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
     mediaMimeType: null,
     providerTimestamp: queued.providerTimestamp,
   };
-  const { conversation, isNewSession } = await getOrCreateActiveConversation(contact.id);
+  const { conversation, isNewSession } = await getOrCreateActiveConversation(contact.restaurantId, contact.id);
 
   const bodyForLog = input.text ?? `[${input.type}]`;
   const inboundMessage = await saveMessage(conversation.id, MessageDirection.INBOUND, input.type, bodyForLog, {
@@ -1478,7 +1510,7 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
   // y el asesor no podia verlo en el panel.
   let inboundMedia: DownloadedMedia | null = null;
   if ((input.type === "AUDIO" || input.type === "IMAGE") && input.mediaId) {
-    inboundMedia = await (await getWhatsAppClient()).downloadMedia(input.mediaId);
+    inboundMedia = await (await getWhatsAppClient(contact.restaurantId)).downloadMedia(input.mediaId);
     if (inboundMedia) {
       await prisma.message.update({
         where: { id: inboundMessage.id },
@@ -1537,7 +1569,7 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
   }
 
   if (isNewSession) {
-    const settings = await getBusinessSettings();
+    const settings = await getBusinessSettings(contact.restaurantId);
     const { isOpen } = checkIsOpen(settings);
 
     if (!isOpen && !settings.acceptsScheduledOrders) {
@@ -1580,7 +1612,7 @@ async function processIncomingQueuedMessage(contactId: string, queued: QueuedInb
   }
 
   if (input.type === "IMAGE") {
-    await handleIncomingImage(conversation.id, input.phone, receivedAt, inboundMedia);
+    await handleIncomingImage(contact.restaurantId, conversation.id, input.phone, receivedAt, inboundMedia);
     return;
   }
 
@@ -1655,12 +1687,13 @@ async function handleIncomingAudio(
 }
 
 async function handleIncomingImage(
+  restaurantId: string,
   conversationId: string,
   phone: string,
   receivedAt: number,
   media: { base64: string; mimeType: string } | null,
 ) {
-  const settings = await getBusinessSettings();
+  const settings = await getBusinessSettings(restaurantId);
 
   // El caso de comprobante de transferencia (marcar pago REPORTED) ya se resuelve en
   // processIncomingMessage antes de llegar aqui, incluyendo cuando la conversacion esta en
@@ -1730,9 +1763,9 @@ async function tryHandleUpsellOffer(params: {
   if (isUpsellAcceptMessage(params.text)) {
     params.context.upsell = { ...upsell, pendingProductId: null };
 
-    const products = await listAllProductsFlat();
+    const products = await listAllProductsFlat(params.settings.restaurantId);
     const product = products.find((candidate) => candidate.id === pendingProductId);
-    const cart = await ensureStructuredCart(params.context);
+    const cart = await ensureStructuredCart(params.settings.restaurantId, params.context);
     const alreadyInCart = cart.items.some((item) => item.productId === pendingProductId);
 
     if (!product || !product.isAvailable) {
@@ -1756,7 +1789,7 @@ async function tryHandleUpsellOffer(params: {
       return { handled: true, replyText, madeProgress: true };
     }
 
-    const price = await getEffectivePrice(product.id, product.price);
+    const price = await getEffectivePrice(params.settings.restaurantId, product.id, product.price);
     params.context.orderFlow = {
       ...params.context.orderFlow,
       cart: [...params.context.orderFlow.cart, { productId: product.id, productName: product.name, quantity: 1, unitPrice: price }],
@@ -1796,8 +1829,12 @@ async function tryOfferUpsell(params: {
   if (upsell.suspended || upsell.pendingProductId) return params.baseReplyText;
   if (upsell.offeredProductIds.length >= params.settings.maxUpsellOffers) return params.baseReplyText;
 
-  const cart = await ensureStructuredCart(params.context);
-  const offers = await getCartRecommendations({ cart, rejectedProductIds: upsell.rejectedProductIds });
+  const cart = await ensureStructuredCart(params.settings.restaurantId, params.context);
+  const offers = await getCartRecommendations({
+    restaurantId: params.settings.restaurantId,
+    cart,
+    rejectedProductIds: upsell.rejectedProductIds,
+  });
   const offer = offers[0];
   if (!offer) return params.baseReplyText;
 
@@ -1831,10 +1868,10 @@ async function tryHandleStructuredCartInstruction(params: {
     return { handled: false };
   }
 
-  const cart = await ensureStructuredCart(params.context);
-  const categories = await listCatalog();
+  const cart = await ensureStructuredCart(params.settings.restaurantId, params.context);
+  const categories = await listCatalog(params.settings.restaurantId);
   const allProducts = categories.flatMap((category) => category.products);
-  const priceById = await buildProductPriceMap();
+  const priceById = await buildProductPriceMap(params.settings.restaurantId);
   const result = applyStructuredCartInstruction(cart, instruction, allProducts, priceById);
   params.context.activeCart = result.updatedCart;
   params.context.orderFlow = {
@@ -1911,6 +1948,7 @@ async function tryHandleRepeatOrderRequest(params: {
   }
 
   const preparation = await prepareRepeatOrder({
+    restaurantId: params.settings.restaurantId,
     contactId: params.contactId,
     text: params.text,
     acceptedPaymentMethods: params.acceptedPaymentMethods,
@@ -2016,8 +2054,13 @@ async function handleTextMessageLegacy(
     return;
   }
 
-  const [history, settings] = await Promise.all([getRecentHistoryText(conversationId), getBusinessSettings()]);
+  // La conversacion se lee primero porque de ella sale el restaurante, y de el toda la
+  // configuracion con la que se responde (nombre, horario, moneda, tono, credenciales).
   const conversation = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+  const [history, settings] = await Promise.all([
+    getRecentHistoryText(conversationId),
+    getBusinessSettings(conversation.restaurantId),
+  ]);
   const context = parseContext(conversation.context);
   const normalizedText = normalizeLocalizedText(text);
   const activeSentRecovery = await findLatestSentCartRecovery(conversationId);
@@ -2232,12 +2275,12 @@ async function handleTextMessageLegacy(
       madeProgress = true;
     }
   } else {
-  const faqMatch = intent === Intent.UNKNOWN ? await findFaqMatch(text) : null;
+  const faqMatch = intent === Intent.UNKNOWN ? await findFaqMatch(settings.restaurantId, text) : null;
 
   if (intent === Intent.ORDER_STATUS) {
     replyText = await buildOrderStatusReply(contactId, settings);
   } else if (intent === Intent.VIEW_MENU) {
-    const categoryMatch = await findCategoryMatch(text);
+    const categoryMatch = await findCategoryMatch(settings.restaurantId, text);
     replyText = categoryMatch
       ? await buildCategoryReply(categoryMatch, settings, pendingQuestion)
       : await buildMenuReply(settings, pendingQuestion);
@@ -2252,6 +2295,7 @@ async function handleTextMessageLegacy(
     // responderle con info generica de domicilio y volver a preguntar lo mismo.
     if (decision.nextState.step === OrderFlowStep.CONFIRMING || state.step === OrderFlowStep.CONFIRMING) {
       const pricing = await calculateCartPricing({
+        restaurantId: settings.restaurantId,
         cart: decision.nextState.cart,
         activeCart: context.activeCart ?? null,
         deliveryType: decision.nextState.deliveryType,
@@ -2285,7 +2329,7 @@ async function handleTextMessageLegacy(
       tone: settings.assistantTone,
     });
   } else if (intent === Intent.ASK_PRICE) {
-    const productResolution = await resolveProductFromEntities(entities, text);
+    const productResolution = await resolveProductFromEntities(settings.restaurantId, entities, text);
     if (productResolution.status === "MATCHED" && productResolution.product) {
       const product = productResolution.product.product;
       const comboDetail =
@@ -2309,7 +2353,7 @@ async function handleTextMessageLegacy(
         tone: settings.assistantTone,
       });
     } else {
-      const categoryMatch = await findCategoryMatch(text);
+      const categoryMatch = await findCategoryMatch(settings.restaurantId, text);
       replyText = categoryMatch
         ? await buildCategoryReply(categoryMatch, settings, pendingQuestion)
         : await generateResponse({
@@ -2359,6 +2403,7 @@ async function handleTextMessageLegacy(
 
       if (result.orderCreated) {
         await handleOrderCreation({
+          restaurantId: settings.restaurantId,
           conversationId,
         contactId,
         phone,
@@ -2422,8 +2467,13 @@ async function handleTextMessage(
     return;
   }
 
-  const [history, settings] = await Promise.all([getRecentHistoryText(conversationId), getBusinessSettings()]);
+  // La conversacion se lee primero porque de ella sale el restaurante, y de el toda la
+  // configuracion con la que se responde (nombre, horario, moneda, tono, credenciales).
   const conversation = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+  const [history, settings] = await Promise.all([
+    getRecentHistoryText(conversationId),
+    getBusinessSettings(conversation.restaurantId),
+  ]);
   const context = parseContext(conversation.context);
   const normalizedText = normalizeLocalizedText(text);
   const inOrderFlowAlready = context.orderFlow.step !== OrderFlowStep.IDLE;
@@ -2458,7 +2508,7 @@ async function handleTextMessage(
       // Si la categoria elegida tiene subcategorias, las mostramos numeradas (mismo paso,
       // un nivel mas profundo) en vez de saltar directo a productos — asi soporta cualquier
       // profundidad de categoria > subcategoria > sub-subcategoria configurada en el panel.
-      const numberedChildren = await buildNumberedCategoriesReply(categoryId);
+      const numberedChildren = await buildNumberedCategoriesReply(settings.restaurantId, categoryId);
       if (numberedChildren) {
         context.pendingCategoryIds = numberedChildren.categoryIds;
         await prisma.conversation.update({
@@ -2469,7 +2519,7 @@ async function handleTextMessage(
         return;
       }
 
-      const categories = await listCatalog();
+      const categories = await listCatalog(settings.restaurantId);
       const category = categories.find((c) => c.id === categoryId);
       const numbered = category ? buildNumberedProductsReply(category.name, category.products, settings) : null;
       if (numbered) {
@@ -2507,7 +2557,7 @@ async function handleTextMessage(
       return;
     }
     if (productId) {
-      const categories = await listCatalog();
+      const categories = await listCatalog(settings.restaurantId);
       const product = categories.flatMap((cat) => cat.products).find((p) => p.id === productId);
       if (product) {
         forcedProductName = product.name;
@@ -2528,7 +2578,7 @@ async function handleTextMessage(
     if (pending.stage === "CONFIRM") {
       const choice = parseMenuSelectionIndex(normalizedText);
       if (choice === 1) {
-        const category = await findCategoryMatch(categoryKeyword);
+        const category = await findCategoryMatch(settings.restaurantId, categoryKeyword);
         const numbered = category ? buildNumberedProductsReply(category.categoryName, category.products, settings) : null;
         if (numbered) {
           context.pendingSideDrink = { step: pending.step, stage: "PICK", optionIds: numbered.productIds };
@@ -2556,7 +2606,7 @@ async function handleTextMessage(
       const chosenIndex = parseMenuSelectionIndex(normalizedText);
       const productId = chosenIndex !== null ? pending.optionIds[chosenIndex - 1] : undefined;
       if (productId) {
-        const categories = await listCatalog();
+        const categories = await listCatalog(settings.restaurantId);
         const product = categories.flatMap((cat) => cat.products).find((p) => p.id === productId);
         if (product) {
           forcedSideName = product.name;
@@ -2755,6 +2805,7 @@ async function handleTextMessage(
       },
     });
     await syncCartRecoveryFromConversation({
+      restaurantId: settings.restaurantId,
       conversationId,
       contactId,
       context,
@@ -2779,6 +2830,7 @@ async function handleTextMessage(
       },
     });
     await syncCartRecoveryFromConversation({
+      restaurantId: settings.restaurantId,
       conversationId,
       contactId,
       context,
@@ -2805,6 +2857,7 @@ async function handleTextMessage(
       },
     });
     await syncCartRecoveryFromConversation({
+      restaurantId: settings.restaurantId,
       conversationId,
       contactId,
       context,
@@ -2829,6 +2882,7 @@ async function handleTextMessage(
       },
     });
     await syncCartRecoveryFromConversation({
+      restaurantId: settings.restaurantId,
       conversationId,
       contactId,
       context,
@@ -2862,7 +2916,7 @@ async function handleTextMessage(
       madeProgress = true;
     }
   } else {
-    const faqMatch = intent === Intent.UNKNOWN ? await findFaqMatch(normalizedText) : null;
+    const faqMatch = intent === Intent.UNKNOWN ? await findFaqMatch(settings.restaurantId, normalizedText) : null;
     const shouldHandleOrderStatus =
       intent === Intent.ORDER_STATUS ||
       intent === Intent.ASK_ETA ||
@@ -2893,7 +2947,7 @@ async function handleTextMessage(
         };
       }
     } else if (intent === Intent.VIEW_MENU) {
-      const categoryMatch = await findCategoryMatch(normalizedText);
+      const categoryMatch = await findCategoryMatch(settings.restaurantId, normalizedText);
       if (categoryMatch) {
         const numbered = buildNumberedProductsReply(categoryMatch.categoryName, categoryMatch.products, settings);
         if (numbered) {
@@ -2905,7 +2959,7 @@ async function handleTextMessage(
           replyText = await buildCategoryReply(categoryMatch, settings, pendingQuestion);
         }
       } else {
-        const numberedCategories = await buildNumberedCategoriesReply();
+        const numberedCategories = await buildNumberedCategoriesReply(settings.restaurantId);
         if (numberedCategories) {
           // Fotos generales del menu (si hay configuradas) se mandan antes de la lista de
           // categorias, no despues — asi el cliente las ve primero y responde con el numero.
@@ -2940,7 +2994,7 @@ async function handleTextMessage(
         tone: settings.assistantTone,
       });
     } else if (intent === Intent.ASK_PRICE) {
-      const productResolution = await resolveProductFromEntities(entities, normalizedText);
+      const productResolution = await resolveProductFromEntities(settings.restaurantId, entities, normalizedText);
       if (productResolution.status === "MATCHED" && productResolution.product) {
         const product = productResolution.product.product;
         const comboDetail =
@@ -2964,7 +3018,7 @@ async function handleTextMessage(
           tone: settings.assistantTone,
         });
       } else {
-        const categoryMatch = await findCategoryMatch(normalizedText);
+        const categoryMatch = await findCategoryMatch(settings.restaurantId, normalizedText);
         replyText = categoryMatch
           ? await buildCategoryReply(categoryMatch, settings, pendingQuestion)
           : await generateResponse({
@@ -3057,6 +3111,7 @@ async function handleTextMessage(
           await sendAndLog(conversationId, phone, replyText, receivedAt);
         }
         await handleOrderCreation({
+          restaurantId: settings.restaurantId,
           conversationId,
           contactId,
           phone,
@@ -3093,6 +3148,7 @@ async function handleTextMessage(
     },
   });
   await syncCartRecoveryFromConversation({
+    restaurantId: settings.restaurantId,
     conversationId,
     contactId,
     context,
@@ -3179,9 +3235,10 @@ function categoryHasVisibleContent(
  * menu como para cada nivel de subcategoria que el cliente vaya eligiendo.
  */
 async function buildNumberedCategoriesReply(
+  restaurantId: string,
   parentCategoryId: string | null = null,
 ): Promise<{ text: string; categoryIds: string[] } | null> {
-  const categories = await listCatalog();
+  const categories = await listCatalog(restaurantId);
   const scoped = categories.filter((cat) => (cat.parentCategoryId ?? null) === parentCategoryId);
   const visible = scoped.filter((cat) => categoryHasVisibleContent(cat, categories));
   if (visible.length === 0) return null;
@@ -3211,7 +3268,7 @@ function buildNumberedProductsReply(
 }
 
 async function buildMenuReply(settings: BusinessSettings, pendingQuestion?: string | null): Promise<string> {
-  const categories = await listCatalog();
+  const categories = await listCatalog(settings.restaurantId);
   const facts = categories.flatMap((cat) =>
     cat.products
       .filter((p) => p.showInMenu)
@@ -3269,7 +3326,7 @@ function looksLikeRecommendationRequest(text: string): boolean {
  * como "por defecto" de cada categoria (el negocio tambien lo eligio a mano en el catalogo).
  */
 async function buildRecommendationReply(settings: BusinessSettings, pendingQuestion?: string | null): Promise<string> {
-  const promos = (await listActivePromotions()).filter(isPromoActiveToday);
+  const promos = (await listActivePromotions(settings.restaurantId)).filter(isPromoActiveToday);
   if (promos.length > 0) {
     const promo = promos[0]!;
     return generateResponse({
@@ -3280,7 +3337,7 @@ async function buildRecommendationReply(settings: BusinessSettings, pendingQuest
     });
   }
 
-  const categories = await listCatalog();
+  const categories = await listCatalog(settings.restaurantId);
   const highlights = categories
     .map((c) => c.products.find((p) => p.isDefaultVariant && p.isAvailable && p.showInMenu))
     .filter((p): p is NonNullable<typeof p> => Boolean(p));
@@ -3304,7 +3361,7 @@ async function buildRecommendationReply(settings: BusinessSettings, pendingQuest
 }
 
 async function buildPromotionsReply(settings: BusinessSettings, pendingQuestion?: string | null): Promise<string> {
-  const promos = (await listActivePromotions()).filter(isPromoActiveToday);
+  const promos = (await listActivePromotions(settings.restaurantId)).filter(isPromoActiveToday);
   if (promos.length === 0) {
     return generateResponse({
       facts: ["No hay promociones activas en este momento."],
@@ -3375,7 +3432,9 @@ async function runOrderFlowTurn(params: {
     state.step === OrderFlowStep.COLLECTING_ITEMS ||
     intent === Intent.ORDER_PRODUCT ||
     looksLikeCorrection;
-  const productResolution = needsProductMatch ? await resolveProductFromEntities(entities, text) : null;
+  const productResolution = needsProductMatch
+    ? await resolveProductFromEntities(settings.restaurantId, entities, text)
+    : null;
   const matchedProduct =
     productResolution?.status === "MATCHED" && productResolution.product?.available
       ? {
@@ -3426,7 +3485,7 @@ async function runOrderFlowTurn(params: {
     (state.step === OrderFlowStep.IDLE || state.step === OrderFlowStep.COLLECTING_ITEMS) &&
     intent === Intent.ORDER_PRODUCT
   ) {
-    const categoryMatch = await findCategoryMatch(text);
+    const categoryMatch = await findCategoryMatch(settings.restaurantId, text);
     if (categoryMatch) {
       const replyText = await buildCategoryReply(categoryMatch, settings, null);
       return { replyText, madeProgress: true, nextState: state, orderCreated: false, stateBeforeReset: state };
@@ -3443,20 +3502,20 @@ async function runOrderFlowTurn(params: {
   ];
   const { matched: matchedSides, unmatchedTexts: unmatchedSideTexts } =
     entities.sides && entities.sides.length > 0
-      ? await resolveSidesFromEntities(entities, productNamesToIgnore)
+      ? await resolveSidesFromEntities(settings.restaurantId, entities, productNamesToIgnore)
       : { matched: [], unmatchedTexts: [] };
 
   // Bebidas/acompanantes disponibles del catalogo, para ofrecerlos explicitamente en
   // ASK_DRINKS/ASK_SIDES ("¿que desea tomar? tenemos: gaseosa, jugo natural...") en vez de
   // una pregunta generica sin precios.
-  const drinksCategory = await findCategoryMatch("bebidas");
+  const drinksCategory = await findCategoryMatch(settings.restaurantId, "bebidas");
   const availableDrinks = (drinksCategory?.products ?? []).map((p) => ({
     id: p.id,
     name: p.name,
     price: p.price,
     categoryName: drinksCategory!.categoryName,
   }));
-  const sidesCategory = await findCategoryMatch("acompanantes");
+  const sidesCategory = await findCategoryMatch(settings.restaurantId, "acompanantes");
   const availableSides = (sidesCategory?.products ?? []).map((p) => ({
     id: p.id,
     name: p.name,
@@ -3483,6 +3542,7 @@ async function runOrderFlowTurn(params: {
 
   if (decision.nextState.step === OrderFlowStep.CONFIRMING || state.step === OrderFlowStep.CONFIRMING) {
     const pricing = await calculateCartPricing({
+      restaurantId: settings.restaurantId,
       cart: decision.nextState.cart,
       activeCart: context.activeCart ?? null,
       deliveryType: decision.nextState.deliveryType,
@@ -3514,7 +3574,7 @@ async function runOrderFlowTurn(params: {
   // (no un numero fijo) en vez de mandarlo a preguntar eso por separado despues.
   let extraFacts: string[] = [];
   if (state.step === OrderFlowStep.ASK_DELIVERY_TYPE && decision.nextState.step === OrderFlowStep.ASK_ADDRESS) {
-    const etaMinutes = await estimateDeliveryMinutes(settings.estimatedPrepMinutes);
+    const etaMinutes = await estimateDeliveryMinutes(settings.restaurantId, settings.estimatedPrepMinutes);
     const cartSummary = state.cart.map((i) => `${i.quantity}x ${i.productName}`).join(", ");
     extraFacts = [
       settings.deliveryFee > 0

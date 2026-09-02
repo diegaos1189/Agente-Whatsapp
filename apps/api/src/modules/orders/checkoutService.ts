@@ -284,6 +284,7 @@ export async function validateCheckout(params: {
   }
 
   const pricing = await calculateCartPricing({
+    restaurantId: settings.restaurantId,
     cart: state.cart,
     activeCart,
     deliveryType: state.deliveryType,

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireAdmin } from "../modules/adminUsers/adminAuth.js";
+import { requirePlatformAdmin } from "../modules/adminUsers/adminAuth.js";
 import { prisma } from "../db/prisma.js";
 
 const leadCreateSchema = z.object({
@@ -40,12 +40,12 @@ export async function leadRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/platform/leads", async (request) => {
-    requireAdmin(request);
+    requirePlatformAdmin(request);
     return prisma.lead.findMany({ orderBy: { createdAt: "desc" } });
   });
 
   app.patch("/api/platform/leads/:id", async (request) => {
-    requireAdmin(request);
+    requirePlatformAdmin(request);
     const { id } = request.params as { id: string };
     const body = leadStatusSchema.parse(request.body);
     return prisma.lead.update({ where: { id }, data: { status: body.status } });

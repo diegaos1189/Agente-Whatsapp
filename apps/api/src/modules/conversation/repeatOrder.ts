@@ -133,10 +133,10 @@ function findCurrentProduct(orderItem: OrderWithItems["items"][number], allProdu
   );
 }
 
-async function buildCurrentPriceMap(products: ProductDTO[]): Promise<Map<string, number>> {
+async function buildCurrentPriceMap(restaurantId: string, products: ProductDTO[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   for (const product of products) {
-    map.set(product.id, await getEffectivePrice(product.id, product.price));
+    map.set(product.id, await getEffectivePrice(restaurantId, product.id, product.price));
   }
   return map;
 }
@@ -205,6 +205,7 @@ export function formatRecentOrderChoices(orders: OrderWithItems[]): string[] {
 }
 
 export async function prepareRepeatOrder(params: {
+  restaurantId: string;
   contactId: string;
   text: string;
   acceptedPaymentMethods: PaymentMethod[];
@@ -273,8 +274,8 @@ export async function prepareRepeatOrder(params: {
     }
   }
 
-  const allProducts = await listAllProductsForResolution();
-  const priceById = await buildCurrentPriceMap(allProducts);
+  const allProducts = await listAllProductsForResolution(params.restaurantId);
+  const priceById = await buildCurrentPriceMap(params.restaurantId, allProducts);
   const acceptedMethods = new Set(params.acceptedPaymentMethods);
   const paymentMethod =
     sourceOrder.paymentMethod && acceptedMethods.has(sourceOrder.paymentMethod as PaymentMethod)

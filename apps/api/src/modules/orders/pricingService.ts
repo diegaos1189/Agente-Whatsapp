@@ -102,13 +102,13 @@ function canAttachComponent(item: StructuredCartItem, component: ProductDTO): bo
   return false;
 }
 
-async function buildCatalogMaps() {
-  const categories = await listCatalog();
+async function buildCatalogMaps(restaurantId: string) {
+  const categories = await listCatalog(restaurantId);
   const allProducts = categories.flatMap((category) => category.products);
   const byId = new Map(allProducts.map((product) => [product.id, product]));
   const currentPriceById = new Map<string, number>();
   for (const product of allProducts) {
-    currentPriceById.set(product.id, await getEffectivePrice(product.id, product.price));
+    currentPriceById.set(product.id, await getEffectivePrice(restaurantId, product.id, product.price));
   }
   return { allProducts, byId, currentPriceById };
 }
@@ -143,13 +143,15 @@ function pairReplacementComponent(item: StructuredCartItem, component: Structure
 }
 
 export async function calculateCartPricing(params: {
+  /** Restaurante cuyo catalogo y promociones fijan los precios de este carrito. */
+  restaurantId: string;
   cart: CartLine[];
   activeCart?: StructuredCartState | null;
   deliveryType: DeliveryType | null;
   currency: string;
   businessDeliveryFee: number;
 }): Promise<CartPricingResult> {
-  const { byId, currentPriceById } = await buildCatalogMaps();
+  const { byId, currentPriceById } = await buildCatalogMaps(params.restaurantId);
   const sourceCart = params.activeCart ? { items: params.activeCart.items.map(cloneItem), lastReferencedItemId: params.activeCart.lastReferencedItemId } : toStructuredCartFromLegacy(params.cart);
   const issues: PricingValidationIssue[] = [];
   const changedMessages: string[] = [];

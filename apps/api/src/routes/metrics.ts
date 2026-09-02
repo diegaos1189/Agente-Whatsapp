@@ -2,11 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requirePermission } from "../modules/adminUsers/adminAuth.js";
 import { getCustomerSegmentCustomers, getMetrics, getMetricsForRange } from "../modules/metrics/metricsService.js";
+import { resolveRestaurantId } from "../modules/platform/restaurantContext.js";
 
 export async function metricsRoutes(app: FastifyInstance) {
   app.get("/api/metrics", async (request) => {
     requirePermission(request, "metrics");
-    return getMetrics();
+    return getMetrics(await resolveRestaurantId(request));
   });
 
   app.get("/api/metrics/range", async (request, reply) => {
@@ -17,12 +18,12 @@ export async function metricsRoutes(app: FastifyInstance) {
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
       return reply.status(400).send({ error: "Fechas invalidas" });
     }
-    return getMetricsForRange(from, to);
+    return getMetricsForRange(await resolveRestaurantId(request), from, to);
   });
 
   app.get("/api/metrics/customers", async (request) => {
     requirePermission(request, "metrics");
     const query = z.object({ limit: z.coerce.number().int().min(1).max(50).optional() }).parse(request.query);
-    return getCustomerSegmentCustomers(query.limit);
+    return getCustomerSegmentCustomers(await resolveRestaurantId(request), query.limit);
   });
 }

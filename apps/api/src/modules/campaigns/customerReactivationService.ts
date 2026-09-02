@@ -55,13 +55,11 @@ export async function recordMarketingOptOut(contactId: string, reason: string): 
   });
 }
 
-async function processEligibleReactivation(contactId: string, now: Date): Promise<void> {
-  const settings = await getBusinessSettings();
-  if (!settings.reactivationEnabled) return;
-  if (settings.whatsappProvider !== "meta") return;
-  if (!settings.reactivationTemplateName.trim()) return;
-  if (!checkIsOpen(settings, now).isOpen) return;
-
+async function processEligibleReactivation(
+  settings: Awaited<ReturnType<typeof getBusinessSettings>>,
+  contactId: string,
+  now: Date,
+): Promise<void> {
   const contact = await db.contact.findUnique({
     where: { id: contactId },
     include: {
@@ -105,7 +103,7 @@ async function processEligibleReactivation(contactId: string, now: Date): Promis
     if (cooldownDays < settings.reactivationCooldownDays) return;
   }
 
-  const client = await getWhatsAppClient();
+  const client = await getWhatsAppClient(settings.restaurantId);
   const sendResult = await client.sendTemplateMessage(
     contact.phone,
     settings.reactivationTemplateName,
@@ -127,8 +125,12 @@ async function processEligibleReactivation(contactId: string, now: Date): Promis
   });
 }
 
-export async function processCustomerReactivationCampaigns(now: Date = new Date()): Promise<void> {
-  const settings = await getBusinessSettings();
+/**
+ * Campaña de reactivacion de UN restaurante: sus dormidos, su plantilla, su numero y su
+ * horario (solo se manda con el negocio abierto, y "abierto" depende de su zona horaria).
+ */
+async function processRestaurantReactivation(restaurantId: string, now: Date): Promise<void> {
+  const settings = await getBusinessSettings(restaurantId);
   if (!settings.reactivationEnabled) return;
   if (settings.whatsappProvider !== "meta") return;
   if (!settings.reactivationTemplateName.trim()) return;
@@ -139,6 +141,7 @@ export async function processCustomerReactivationCampaigns(now: Date = new Date(
 
   const eligibleContacts = await db.contact.findMany({
     where: {
+      restaurantId,
       marketingOptInAt: { not: null },
       marketingOptOutAt: null,
       orders: {
@@ -163,7 +166,26 @@ export async function processCustomerReactivationCampaigns(now: Date = new Date(
   });
 
   for (const contact of eligibleContacts) {
-    await processEligibleReactivation(contact.id, now);
+    await processEligibleReactivation(settings, contact.id, now);
+  }
+}
+
+export async function processCustomerReactivationCampaigns(now: Date = new Date()): Promise<void> {
+  const restaurants = await prisma.platformRestaurant.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true },
+  });
+
+  // Un restaurante mal configurado no puede cortarle la campaña a los demas.
+  for (const restaurant of restaurants) {
+    try {
+      await processRestaurantReactivation(restaurant.id, now);
+    } catch (error) {
+      logger.error(
+        { err: error, restaurantId: restaurant.id },
+        "Fallo la campaña de reactivacion de un restaurante",
+      );
+    }
   }
 }
 

@@ -21,6 +21,7 @@ import {
 } from "../modules/conversation/conversationService.js";
 import { getBusinessSettings } from "../modules/business/businessHoursService.js";
 import { calculateCartPricing } from "../modules/orders/pricingService.js";
+import { resolveRestaurantId } from "../modules/platform/restaurantContext.js";
 import { logger } from "../utils/logger.js";
 
 const ORDER_STATUS_VALUES = Object.values(OrderStatus) as [string, ...string[]];
@@ -59,9 +60,11 @@ export async function orderRoutes(app: FastifyInstance) {
     // La pantalla de cocina lista pedidos con permiso "kitchen", sin necesitar "orders".
     requireAnyPermission(request, ["orders", "kitchen"]);
     const query = z.object({ status: z.string().optional(), contactId: z.string().optional() }).parse(request.query);
+    const restaurantId = await resolveRestaurantId(request);
 
     const orders = await prisma.order.findMany({
       where: {
+        restaurantId,
         ...(query.status ? { status: query.status } : {}),
         ...(query.contactId ? { contactId: query.contactId } : {}),
       },
@@ -75,23 +78,29 @@ export async function orderRoutes(app: FastifyInstance) {
 
   app.get("/api/orders/alerts", async (request) => {
     requirePermission(request, "orders");
-    const settings = await getBusinessSettings();
-    return getActiveOperationalAlerts({ estimatedPrepMinutes: settings.estimatedPrepMinutes });
+    const restaurantId = await resolveRestaurantId(request);
+    const settings = await getBusinessSettings(restaurantId);
+    return getActiveOperationalAlerts({ restaurantId, estimatedPrepMinutes: settings.estimatedPrepMinutes });
   });
 
   app.post("/api/orders", async (request, reply) => {
     requirePermission(request, "orders");
     const body = manualOrderSchema.parse(request.body);
+    const restaurantId = await resolveRestaurantId(request);
 
-    const contact = await prisma.contact.findUnique({ where: { id: body.contactId } });
+    // Cliente y productos se buscan dentro del restaurante del request: con el id pelado, el
+    // panel de un negocio podria crearle un pedido al cliente de otro.
+    const contact = await prisma.contact.findFirst({ where: { id: body.contactId, restaurantId } });
     if (!contact) return reply.status(404).send({ error: "Cliente no encontrado" });
 
-    const products = await prisma.product.findMany({ where: { id: { in: body.items.map((i) => i.productId) } } });
+    const products = await prisma.product.findMany({
+      where: { id: { in: body.items.map((i) => i.productId) }, restaurantId },
+    });
     if (products.length !== body.items.length) {
       return reply.status(400).send({ error: "Uno o mas productos no existen" });
     }
 
-    const settings = await getBusinessSettings();
+    const settings = await getBusinessSettings(restaurantId);
     const requestedCart = body.items.map((line) => {
       const product = products.find((p) => p.id === line.productId)!;
       return {
@@ -102,6 +111,7 @@ export async function orderRoutes(app: FastifyInstance) {
       };
     });
     const pricing = await calculateCartPricing({
+      restaurantId,
       cart: requestedCart,
       deliveryType: body.deliveryType,
       currency: settings.currency,
@@ -112,6 +122,7 @@ export async function orderRoutes(app: FastifyInstance) {
     }
 
     const { order } = await createOrder({
+      restaurantId,
       contactId: contact.id,
       phone: contact.phone,
       customerName: contact.name,
@@ -137,8 +148,9 @@ export async function orderRoutes(app: FastifyInstance) {
   app.get("/api/orders/:id", async (request, reply) => {
     requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const order = await prisma.order.findUnique({
-      where: { id },
+    const restaurantId = await resolveRestaurantId(request);
+    const order = await prisma.order.findFirst({
+      where: { id, restaurantId },
       include: { items: { include: { product: true } }, contact: true, events: true, payments: true },
     });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
@@ -151,16 +163,19 @@ export async function orderRoutes(app: FastifyInstance) {
     const body = z
       .object({ items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1) })
       .parse(request.body);
+    const restaurantId = await resolveRestaurantId(request);
 
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findFirst({ where: { id, restaurantId } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
 
-    const products = await prisma.product.findMany({ where: { id: { in: body.items.map((i) => i.productId) } } });
+    const products = await prisma.product.findMany({
+      where: { id: { in: body.items.map((i) => i.productId) }, restaurantId },
+    });
     if (products.length !== body.items.length) {
       return reply.status(400).send({ error: "Uno o mas productos no existen" });
     }
 
-    const settings = await getBusinessSettings();
+    const settings = await getBusinessSettings(restaurantId);
     const requestedCart = body.items.map((line) => {
       const product = products.find((p) => p.id === line.productId)!;
       return {
@@ -171,6 +186,7 @@ export async function orderRoutes(app: FastifyInstance) {
       };
     });
     const pricing = await calculateCartPricing({
+      restaurantId,
       cart: requestedCart,
       deliveryType: order.deliveryType as DeliveryType,
       currency: settings.currency,
@@ -192,7 +208,7 @@ export async function orderRoutes(app: FastifyInstance) {
   app.post("/api/orders/:id/confirm-payment", async (request, reply) => {
     requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findFirst({ where: { id, restaurantId: await resolveRestaurantId(request) } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
     if (order.status !== OrderStatus.AWAITING_PAYMENT) {
       return reply.status(400).send({ error: "Este pedido no esta esperando confirmacion de pago" });
@@ -210,7 +226,7 @@ export async function orderRoutes(app: FastifyInstance) {
   app.post("/api/orders/:id/mark-paid", async (request, reply) => {
     requirePermission(request, "facturacion");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findFirst({ where: { id, restaurantId: await resolveRestaurantId(request) } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
     if (order.paymentMethod === PaymentMethod.TRANSFER) {
       return reply.status(400).send({ error: "Los pagos por transferencia se confirman desde Pedidos, no aqui" });
@@ -234,7 +250,7 @@ export async function orderRoutes(app: FastifyInstance) {
       requirePermission(request, "orders");
     }
 
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findFirst({ where: { id, restaurantId: await resolveRestaurantId(request) } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
     if (!isAllowedStatusTransition(order.status, body.status, order.deliveryType)) {
       return reply.status(400).send({ error: `No se permite pasar de ${order.status} a ${body.status}` });
@@ -252,7 +268,7 @@ export async function orderRoutes(app: FastifyInstance) {
   app.post("/api/orders/:id/clear-flag", async (request, reply) => {
     requirePermission(request, "orders");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const order = await prisma.order.findUnique({ where: { id } });
+    const order = await prisma.order.findFirst({ where: { id, restaurantId: await resolveRestaurantId(request) } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
     await clearOrderFlag(id);
     return { ok: true };

@@ -1,6 +1,7 @@
 import { prisma } from "../../db/prisma.js";
 import { getBusinessSettings } from "../business/businessHoursService.js";
 import { ConversationStatus, OrderStatus } from "@pollos/shared";
+import type { BusinessSettingsDTO } from "@pollos/shared";
 import { logger } from "../../utils/logger.js";
 import { runBackupIfDue } from "../backup/backupService.js";
 import { listCatalog, invalidateCatalogCache } from "../products/productService.js";
@@ -9,35 +10,38 @@ const CHECK_INTERVAL_MS = 30_000;
 const RETENTION_DAYS = 30;
 const MORNING_CHECK_TIME = "05:00";
 
-let lastArchiveRunKey: string | null = null;
-let lastPurgeRunDay: string | null = null;
-let lastMaintenanceRunKey: string | null = null;
-let lastMorningCheckRunKey: string | null = null;
+// Un restaurante en Bogota y otro en Ciudad de Mexico archivan a horas distintas y cada uno
+// elige la suya, asi que la marca de "ya corrio" es por restaurante, no global. Con una sola
+// variable, el primer negocio del dia le robaba la corrida a todos los demas.
+const lastArchiveRunKey = new Map<string, string>();
+const lastPurgeRunDay = new Map<string, string>();
+const lastMaintenanceRunKey = new Map<string, string>();
+const lastMorningCheckRunKey = new Map<string, string>();
 
-async function archiveDueConversations(): Promise<void> {
-  const settings = await getBusinessSettings();
-  const now = new Date();
-  const currentTime = new Intl.DateTimeFormat("en-GB", {
-    timeZone: settings.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(now);
+/** true la primera vez que se ve esta clave para este restaurante (y la deja marcada). */
+function claimRun(marks: Map<string, string>, restaurantId: string, key: string): boolean {
+  if (marks.get(restaurantId) === key) return false;
+  marks.set(restaurantId, key);
+  return true;
+}
 
+async function archiveDueConversations(settings: BusinessSettingsDTO, currentTime: string, runKey: string): Promise<void> {
   if (currentTime !== settings.dailyArchiveTime) return;
-
-  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: settings.timezone }).format(now);
-  const runKey = `${todayKey}T${currentTime}`;
-  if (lastArchiveRunKey === runKey) return;
-  lastArchiveRunKey = runKey;
+  if (!claimRun(lastArchiveRunKey, settings.restaurantId, runKey)) return;
 
   const result = await prisma.conversation.updateMany({
-    where: { status: { in: [ConversationStatus.ACTIVE, ConversationStatus.WAITING_HUMAN] } },
+    where: {
+      restaurantId: settings.restaurantId,
+      status: { in: [ConversationStatus.ACTIVE, ConversationStatus.WAITING_HUMAN] },
+    },
     data: { status: ConversationStatus.CLOSED },
   });
 
   if (result.count > 0) {
-    logger.info({ count: result.count, at: runKey }, "Archivo automatico diario de conversaciones ejecutado");
+    logger.info(
+      { restaurantId: settings.restaurantId, count: result.count, at: runKey },
+      "Archivo automatico diario de conversaciones ejecutado",
+    );
   }
 }
 
@@ -47,16 +51,13 @@ async function archiveDueConversations(): Promise<void> {
  * y las cerradas se conservan 30 dias (para que el bot pueda dar contexto a clientes que
  * vuelven) antes de purgarse.
  */
-async function purgeExpiredConversations(): Promise<void> {
-  const settings = await getBusinessSettings();
-  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: settings.timezone }).format(new Date());
-  if (lastPurgeRunDay === todayKey) return;
-  lastPurgeRunDay = todayKey;
+async function purgeExpiredConversations(settings: BusinessSettingsDTO, todayKey: string): Promise<void> {
+  if (!claimRun(lastPurgeRunDay, settings.restaurantId, todayKey)) return;
 
   const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
   const expired = await prisma.conversation.findMany({
-    where: { status: ConversationStatus.CLOSED, updatedAt: { lt: cutoff } },
+    where: { restaurantId: settings.restaurantId, status: ConversationStatus.CLOSED, updatedAt: { lt: cutoff } },
     select: { id: true },
   });
   if (expired.length === 0) return;
@@ -68,7 +69,10 @@ async function purgeExpiredConversations(): Promise<void> {
     prisma.conversation.deleteMany({ where: { id: { in: ids } } }),
   ]);
 
-  logger.info({ count: ids.length }, "Purgadas conversaciones archivadas de mas de 30 dias");
+  logger.info(
+    { restaurantId: settings.restaurantId, count: ids.length },
+    "Purgadas conversaciones archivadas de mas de 30 dias",
+  );
 }
 
 /**
@@ -76,8 +80,7 @@ async function purgeExpiredConversations(): Promise<void> {
  * (el token temporal de Meta vence cada 24h) queda registrado en el log ANTES de que un
  * cliente real le escriba al bot y no reciba respuesta.
  */
-async function checkWhatsAppTokenHealth(): Promise<void> {
-  const settings = await getBusinessSettings();
+async function checkWhatsAppTokenHealth(settings: BusinessSettingsDTO): Promise<void> {
   if (settings.whatsappProvider !== "meta" || !settings.whatsappToken || !settings.whatsappPhoneNumberId) return;
 
   try {
@@ -88,34 +91,39 @@ async function checkWhatsAppTokenHealth(): Promise<void> {
     if (!res.ok) {
       const body = await res.text();
       logger.error(
-        { status: res.status, body },
+        { restaurantId: settings.restaurantId, negocio: settings.restaurantName, status: res.status, body },
         "⚠ Token de WhatsApp invalido o vencido — el bot no va a poder responder. Actualizalo desde Configuracion.",
       );
     } else {
-      logger.info("Token de WhatsApp verificado OK en el mantenimiento diario");
+      logger.info(
+        { restaurantId: settings.restaurantId },
+        "Token de WhatsApp verificado OK en el mantenimiento diario",
+      );
     }
   } catch (error) {
-    logger.warn({ err: error }, "No se pudo verificar el token de WhatsApp (sin conexion?)");
+    logger.warn({ err: error, restaurantId: settings.restaurantId }, "No se pudo verificar el token de WhatsApp (sin conexion?)");
   }
 }
 
 /** Resumen del dia en el log: pedidos, ventas, pendientes de pago, alertas sin revisar. */
-async function logDailySummary(): Promise<void> {
+async function logDailySummary(restaurantId: string, restaurantName: string): Promise<void> {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
   const [ordersToday, revenueAgg, awaitingPayment, flagged] = await Promise.all([
-    prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
+    prisma.order.count({ where: { restaurantId, createdAt: { gte: startOfToday } } }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: startOfToday }, status: { not: OrderStatus.CANCELLED } },
+      where: { restaurantId, createdAt: { gte: startOfToday }, status: { not: OrderStatus.CANCELLED } },
       _sum: { total: true },
     }),
-    prisma.order.count({ where: { status: OrderStatus.AWAITING_PAYMENT } }),
-    prisma.order.count({ where: { flaggedForReview: true } }),
+    prisma.order.count({ where: { restaurantId, status: OrderStatus.AWAITING_PAYMENT } }),
+    prisma.order.count({ where: { restaurantId, flaggedForReview: true } }),
   ]);
 
   logger.info(
     {
+      restaurantId,
+      negocio: restaurantName,
       ordersToday,
       revenueToday: revenueAgg._sum.total ?? 0,
       awaitingPayment,
@@ -130,16 +138,19 @@ async function logDailySummary(): Promise<void> {
  * conversaciones (BusinessSettings.dailyArchiveTime): backup de la base de datos, chequeo
  * de que el token de WhatsApp siga vivo, y un resumen del dia — para que el sistema quede
  * listo (y detectado cualquier problema) antes de que abra al dia siguiente.
+ *
+ * El backup es de la base entera, no de un restaurante: runBackupIfDue() ya se saltea solo
+ * si el del dia ya se hizo, asi que llamarlo desde el mantenimiento de cada negocio hace
+ * uno solo igual.
  */
-async function runDailyMaintenance(dailyArchiveTime: string, runKey: string): Promise<void> {
-  if (lastMaintenanceRunKey === runKey) return;
-  lastMaintenanceRunKey = runKey;
+async function runDailyMaintenance(settings: BusinessSettingsDTO, runKey: string): Promise<void> {
+  if (!claimRun(lastMaintenanceRunKey, settings.restaurantId, runKey)) return;
 
-  logger.info({ at: runKey }, "Iniciando mantenimiento diario");
+  logger.info({ restaurantId: settings.restaurantId, at: runKey }, "Iniciando mantenimiento diario");
   await runBackupIfDue();
-  await checkWhatsAppTokenHealth();
-  await logDailySummary();
-  logger.info({ at: runKey }, "Mantenimiento diario completado");
+  await checkWhatsAppTokenHealth(settings);
+  await logDailySummary(settings.restaurantId, settings.restaurantName);
+  logger.info({ restaurantId: settings.restaurantId, at: runKey }, "Mantenimiento diario completado");
 }
 
 /**
@@ -148,12 +159,12 @@ async function runDailyMaintenance(dailyArchiveTime: string, runKey: string): Pr
  * productos sin precio, combos que referencian algo borrado, promociones vencidas que
  * siguen marcadas activas. Todo queda en el log para revisar antes de que abran.
  */
-async function runMorningReadinessCheck(runKey: string): Promise<void> {
-  if (lastMorningCheckRunKey === runKey) return;
-  lastMorningCheckRunKey = runKey;
+async function runMorningReadinessCheck(settings: BusinessSettingsDTO, runKey: string): Promise<void> {
+  const restaurantId = settings.restaurantId;
+  if (!claimRun(lastMorningCheckRunKey, restaurantId, runKey)) return;
 
-  invalidateCatalogCache();
-  const categories = await listCatalog();
+  invalidateCatalogCache(restaurantId);
+  const categories = await listCatalog(restaurantId);
   const allProducts = categories.flatMap((c) => c.products);
 
   const emptyCategories = categories.filter((c) => c.products.length === 0).map((c) => c.name);
@@ -162,7 +173,7 @@ async function runMorningReadinessCheck(runKey: string): Promise<void> {
     .filter((p) => p.isCombo && p.comboItems.length === 0)
     .map((p) => p.name);
 
-  const activePromos = await prisma.promotion.findMany({ where: { isActive: true } });
+  const activePromos = await prisma.promotion.findMany({ where: { restaurantId, isActive: true } });
   const now = new Date();
   const expiredButActive = activePromos.filter((p) => p.endsAt && p.endsAt < now).map((p) => p.title);
 
@@ -171,40 +182,60 @@ async function runMorningReadinessCheck(runKey: string): Promise<void> {
 
   if (hasIssues) {
     logger.warn(
-      { ...issues },
+      { restaurantId, negocio: settings.restaurantName, ...issues },
       "⚠ Revision matutina del catalogo encontro problemas — revisar antes de que abran",
     );
   } else {
     logger.info(
-      { categorias: categories.length, productosDisponibles: allProducts.length },
+      { restaurantId, categorias: categories.length, productosDisponibles: allProducts.length },
       "Catalogo revisado y listo para las ventas del dia",
     );
   }
 }
 
-async function tick(): Promise<void> {
-  try {
-    const settings = await getBusinessSettings();
-    const now = new Date();
-    const currentTime = new Intl.DateTimeFormat("en-GB", {
-      timeZone: settings.timezone,
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(now);
-    const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: settings.timezone }).format(now);
-    const runKey = `${todayKey}T${currentTime}`;
+/** Un turno de mantenimiento para un restaurante, en SU zona horaria y a SU hora configurada. */
+async function tickRestaurant(restaurantId: string): Promise<void> {
+  const settings = await getBusinessSettings(restaurantId);
+  const now = new Date();
+  const currentTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone: settings.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: settings.timezone }).format(now);
+  const runKey = `${todayKey}T${currentTime}`;
 
-    await archiveDueConversations();
-    await purgeExpiredConversations();
-    if (currentTime === settings.dailyArchiveTime) {
-      await runDailyMaintenance(settings.dailyArchiveTime, runKey);
-    }
-    if (currentTime === MORNING_CHECK_TIME) {
-      await runMorningReadinessCheck(runKey);
-    }
+  await archiveDueConversations(settings, currentTime, runKey);
+  await purgeExpiredConversations(settings, todayKey);
+  if (currentTime === settings.dailyArchiveTime) {
+    await runDailyMaintenance(settings, runKey);
+  }
+  if (currentTime === MORNING_CHECK_TIME) {
+    await runMorningReadinessCheck(settings, runKey);
+  }
+}
+
+async function tick(): Promise<void> {
+  let restaurants: Array<{ id: string }>;
+  try {
+    restaurants = await prisma.platformRestaurant.findMany({ where: { status: "ACTIVE" }, select: { id: true } });
   } catch (error) {
     logger.error({ err: error }, "Fallo el scheduler de archivo/retencion/mantenimiento diario");
+    return;
+  }
+
+  // El fallo de un restaurante (configuracion a medias, por ejemplo) no puede dejar sin
+  // mantenimiento a los demas: cada uno se atiende y se loguea por separado.
+  for (const restaurant of restaurants) {
+    try {
+      await tickRestaurant(restaurant.id);
+    } catch (error) {
+      logger.error(
+        { err: error, restaurantId: restaurant.id },
+        "Fallo el mantenimiento diario de un restaurante",
+      );
+    }
   }
 }
 
@@ -212,6 +243,8 @@ async function tick(): Promise<void> {
  * Revisa cada 30s si ya es la hora configurada (BusinessSettings.dailyArchiveTime) para:
  * archivar todas las conversaciones activas del dia, purgar conversaciones viejas, y
  * correr el mantenimiento diario completo (backup, salud del token de WhatsApp, resumen).
+ *
+ * Corre para cada restaurante activo de la plataforma, cada uno con su hora y su zona.
  */
 export function startDailyArchiveScheduler(): void {
   setInterval(tick, CHECK_INTERVAL_MS);

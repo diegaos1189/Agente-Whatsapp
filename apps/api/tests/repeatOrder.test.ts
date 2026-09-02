@@ -114,7 +114,7 @@ describe("repeatOrder", () => {
     orderServiceMocks.getLatestOrderForContact.mockResolvedValue(buildOrder());
     orderServiceMocks.getOrderByCodeForContact.mockResolvedValue(buildOrder());
     productServiceMocks.listAllProductsForResolution.mockResolvedValue([combo, ensalada, coca, papas]);
-    productServiceMocks.getEffectivePrice.mockImplementation(async (_productId: string, basePrice: number) => basePrice);
+    productServiceMocks.getEffectivePrice.mockImplementation(async (_restaurantId: string, _productId: string, basePrice: number) => basePrice);
   });
 
   it("TEST 1: reconstruye un carrito nuevo desde el ultimo pedido sin crear una orden confirmada", async () => {
@@ -130,7 +130,7 @@ describe("repeatOrder", () => {
   });
 
   it("TEST 2: usa el precio actual y no el historico", async () => {
-    productServiceMocks.getEffectivePrice.mockImplementation(async (productId: string, basePrice: number) =>
+    productServiceMocks.getEffectivePrice.mockImplementation(async (_restaurantId: string, productId: string, basePrice: number) =>
       productId === "combo" ? 65000 : basePrice,
     );
 

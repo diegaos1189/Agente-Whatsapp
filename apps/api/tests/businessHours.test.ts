@@ -4,6 +4,7 @@ import type { BusinessSettingsDTO } from "@pollos/shared";
 
 const baseSettings: BusinessSettingsDTO = {
   id: "1",
+  restaurantId: "local-deployment",
   restaurantName: "Pollos El Corralito",
   phone: "+57 300 000 0000",
   address: "Cra 10",

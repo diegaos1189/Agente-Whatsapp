@@ -9,8 +9,8 @@ import { getBusinessSettings } from "../business/businessHoursService.js";
  * DELIVERED, medido con order_events) comparado contra el estimado configurado, y que
  * porcentaje de conversaciones termino escalado a un humano.
  */
-export async function getMetrics(): Promise<MetricsDTO> {
-  const settings = await getBusinessSettings();
+export async function getMetrics(restaurantId: string): Promise<MetricsDTO> {
+  const settings = await getBusinessSettings(restaurantId);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -35,15 +35,15 @@ export async function getMetrics(): Promise<MetricsDTO> {
     openRiskOrders,
     recentOrderEvents,
   ] = await Promise.all([
-    prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
-    prisma.order.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
-    prisma.order.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.order.count({ where: { restaurantId, createdAt: { gte: startOfToday } } }),
+    prisma.order.count({ where: { restaurantId, createdAt: { gte: sevenDaysAgo } } }),
+    prisma.order.count({ where: { restaurantId, createdAt: { gte: thirtyDaysAgo } } }),
     prisma.order.findMany({
-      where: { createdAt: { gte: thirtyDaysAgo }, status: { not: OrderStatus.CANCELLED } },
+      where: { restaurantId, createdAt: { gte: thirtyDaysAgo }, status: { not: OrderStatus.CANCELLED } },
       select: { total: true, createdAt: true, events: { select: { status: true, createdAt: true } } },
     }),
     prisma.order.findMany({
-      where: { createdAt: { gte: thirtyDaysAgo }, status: { not: OrderStatus.CANCELLED } },
+      where: { restaurantId, createdAt: { gte: thirtyDaysAgo }, status: { not: OrderStatus.CANCELLED } },
       select: {
         total: true,
         createdAt: true,
@@ -54,14 +54,19 @@ export async function getMetrics(): Promise<MetricsDTO> {
       },
     }),
     prisma.order.findMany({
-      where: { status: { not: OrderStatus.CANCELLED } },
+      where: { restaurantId, status: { not: OrderStatus.CANCELLED } },
       select: { contactId: true, createdAt: true },
       orderBy: [{ contactId: "asc" }, { createdAt: "asc" }],
     }),
-    prisma.order.groupBy({ by: ["status"], _count: { status: true }, where: { createdAt: { gte: thirtyDaysAgo } } }),
-    prisma.conversation.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.order.groupBy({
+      by: ["status"],
+      _count: { status: true },
+      where: { restaurantId, createdAt: { gte: thirtyDaysAgo } },
+    }),
+    prisma.conversation.count({ where: { restaurantId, createdAt: { gte: thirtyDaysAgo } } }),
     prisma.conversation.count({
       where: {
+        restaurantId,
         createdAt: { gte: thirtyDaysAgo },
         contact: {
           orders: {
@@ -70,31 +75,39 @@ export async function getMetrics(): Promise<MetricsDTO> {
         },
       },
     }),
+    // Handoffs y eventos de pedido no tienen restaurante propio: se acotan por su
+    // conversacion/pedido, que si lo tiene.
     prisma.handoff.findMany({
-      where: { createdAt: { gte: thirtyDaysAgo } },
+      where: { createdAt: { gte: thirtyDaysAgo }, conversation: { restaurantId } },
       select: { conversationId: true },
       distinct: ["conversationId"],
     }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: startOfToday }, status: { not: OrderStatus.CANCELLED } },
+      where: { restaurantId, createdAt: { gte: startOfToday }, status: { not: OrderStatus.CANCELLED } },
       _sum: { total: true },
     }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: startOfMonth }, status: { not: OrderStatus.CANCELLED } },
+      where: { restaurantId, createdAt: { gte: startOfMonth }, status: { not: OrderStatus.CANCELLED } },
       _sum: { total: true },
     }),
     prisma.order.findMany({
-      where: { createdAt: { gte: startOfMonth }, deliveryType: "DELIVERY", status: OrderStatus.DELIVERED },
+      where: {
+        restaurantId,
+        createdAt: { gte: startOfMonth },
+        deliveryType: "DELIVERY",
+        status: OrderStatus.DELIVERED,
+      },
       select: { createdAt: true, events: { where: { status: OrderStatus.DELIVERED }, select: { createdAt: true }, take: 1 } },
     }),
     prisma.order.count({
       where: {
+        restaurantId,
         flaggedForReview: true,
         status: { in: [OrderStatus.AWAITING_PAYMENT, OrderStatus.RECEIVED, OrderStatus.READY, OrderStatus.ON_THE_WAY] },
       },
     }),
     prisma.orderEvent.findMany({
-      where: { createdAt: { gte: thirtyDaysAgo } },
+      where: { createdAt: { gte: thirtyDaysAgo }, order: { restaurantId } },
       select: { note: true },
     }),
   ]);
@@ -361,13 +374,13 @@ function calculateAverageDaysBetweenDates(orderDates: Date[]): number | null {
   return Math.round((totalDays / sampleCount) * 10) / 10;
 }
 
-export async function getCustomerSegmentCustomers(limit = 12): Promise<CustomerSegmentCustomersDTO> {
+export async function getCustomerSegmentCustomers(restaurantId: string, limit = 12): Promise<CustomerSegmentCustomersDTO> {
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
   const customerOrders = await prisma.order.findMany({
-    where: { status: { not: OrderStatus.CANCELLED } },
+    where: { restaurantId, status: { not: OrderStatus.CANCELLED } },
     select: {
       contactId: true,
       createdAt: true,
@@ -454,13 +467,15 @@ export async function getCustomerSegmentCustomers(limit = 12): Promise<CustomerS
 }
 
 /** Ventas/pedidos en un rango de fechas arbitrario, para el filtro de historial del panel. */
-export async function getMetricsForRange(from: Date, to: Date): Promise<RangeMetricsDTO> {
-  const settings = await getBusinessSettings();
+export async function getMetricsForRange(restaurantId: string, from: Date, to: Date): Promise<RangeMetricsDTO> {
+  const settings = await getBusinessSettings(restaurantId);
 
   const [orderCount, revenueAgg] = await Promise.all([
-    prisma.order.count({ where: { createdAt: { gte: from, lte: to }, status: { not: OrderStatus.CANCELLED } } }),
+    prisma.order.count({
+      where: { restaurantId, createdAt: { gte: from, lte: to }, status: { not: OrderStatus.CANCELLED } },
+    }),
     prisma.order.aggregate({
-      where: { createdAt: { gte: from, lte: to }, status: { not: OrderStatus.CANCELLED } },
+      where: { restaurantId, createdAt: { gte: from, lte: to }, status: { not: OrderStatus.CANCELLED } },
       _sum: { total: true },
     }),
   ]);

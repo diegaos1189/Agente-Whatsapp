@@ -151,7 +151,7 @@ describe("golden conversations", () => {
       { id: coca.id, name: coca.name, price: coca.price, categoryName: coca.categoryName, categoryId: "c4", description: null, isAvailable: true, sortOrder: 1, isDefaultVariant: false, searchKeywords: null, unitCount: null, isCombo: false, comboItems: [], showInMenu: true },
       { id: colombiana.id, name: colombiana.name, price: colombiana.price, categoryName: colombiana.categoryName, categoryId: "c4", description: null, isAvailable: true, sortOrder: 2, isDefaultVariant: false, searchKeywords: null, unitCount: null, isCombo: false, comboItems: [], showInMenu: true },
     ]);
-    productServiceMocks.getEffectivePrice.mockImplementation(async (_productId: string, basePrice: number) => basePrice);
+    productServiceMocks.getEffectivePrice.mockImplementation(async (_restaurantId: string, _productId: string, basePrice: number) => basePrice);
   });
 
   it("GOLDEN 1: pedido completo dividido conserva carrito y flujo", () => {

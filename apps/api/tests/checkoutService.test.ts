@@ -5,7 +5,7 @@ import { initialOrderFlowState } from "../src/modules/conversation/orderFlow.js"
 
 const productServiceMocks = vi.hoisted(() => ({
   listCatalog: vi.fn<() => Promise<CategoryDTO[]>>(),
-  getEffectivePrice: vi.fn<(productId: string, basePrice: number) => Promise<number>>(),
+  getEffectivePrice: vi.fn<(restaurantId: string, productId: string, basePrice: number) => Promise<number>>(),
 }));
 
 vi.mock("../src/modules/products/productService.js", () => ({
@@ -59,12 +59,13 @@ function setCatalog(products: ProductDTO[], effectivePrices?: Record<string, num
       products: categoryProducts,
     })),
   );
-  productServiceMocks.getEffectivePrice.mockImplementation(async (productId, basePrice) => effectivePrices?.[productId] ?? basePrice);
+  productServiceMocks.getEffectivePrice.mockImplementation(async (_restaurantId, productId, basePrice) => effectivePrices?.[productId] ?? basePrice);
 }
 
 function buildSettings(overrides: Partial<BusinessSettingsDTO> = {}): BusinessSettingsDTO {
   return {
     id: "settings",
+    restaurantId: "local-deployment",
     restaurantName: "Pollos",
     logoUrl: null,
     phone: "3000000000",

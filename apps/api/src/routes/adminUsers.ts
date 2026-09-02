@@ -11,6 +11,7 @@ import {
   updateUser,
   deleteUser,
 } from "../modules/adminUsers/adminUserService.js";
+import { resolveAdminUserScope } from "../modules/platform/restaurantContext.js";
 
 const ROLE_VALUES = [ADMIN_ROLE, STAFF_ROLE] as const;
 const PERMISSION_VALUES = PERMISSION_KEYS as unknown as [string, ...string[]];
@@ -44,14 +45,15 @@ export async function adminUserRoutes(app: FastifyInstance) {
 
   app.get("/api/admin-users", async (request) => {
     requireAdmin(request);
-    return listUsers();
+    return listUsers(await resolveAdminUserScope(request));
   });
 
   app.post("/api/admin-users", async (request, reply) => {
     requireAdmin(request);
     const body = createUserSchema.parse(request.body);
     try {
-      return await createUser(body);
+      // El usuario nace en el restaurante que se esta administrando, no en el del que lo crea.
+      return await createUser({ ...body, restaurantId: await resolveAdminUserScope(request) });
     } catch (error) {
       return reply.status(400).send({ error: error instanceof Error ? error.message : "No se pudo crear el usuario" });
     }
@@ -62,7 +64,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = updateUserSchema.parse(request.body);
     try {
-      return await updateUser(id, body);
+      return await updateUser(id, await resolveAdminUserScope(request), body);
     } catch (error) {
       return reply.status(400).send({ error: error instanceof Error ? error.message : "No se pudo actualizar el usuario" });
     }
@@ -72,7 +74,7 @@ export async function adminUserRoutes(app: FastifyInstance) {
     requireAdmin(request);
     const { id } = z.object({ id: z.string() }).parse(request.params);
     try {
-      await deleteUser(id);
+      await deleteUser(id, await resolveAdminUserScope(request));
       return { ok: true };
     } catch (error) {
       return reply.status(400).send({ error: error instanceof Error ? error.message : "No se pudo eliminar el usuario" });

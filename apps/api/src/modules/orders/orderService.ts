@@ -63,6 +63,8 @@ export interface CartLine {
 export interface CreateOrderItemInput extends CartLine {}
 
 interface CreateOrderParams {
+  /** Restaurante que prepara y cobra el pedido. Es el mismo del contacto que lo hizo. */
+  restaurantId: string;
   contactId: string;
   items: CreateOrderItemInput[];
   confirmationId?: string | null;
@@ -171,6 +173,7 @@ export async function createOrder(params: CreateOrderParams): Promise<{ order: O
       }
       return tx.order.create({
         data: {
+          restaurantId: params.restaurantId,
           code,
           confirmationId: params.confirmationId ?? null,
           contactId: params.contactId,
@@ -275,9 +278,10 @@ export async function createOrder(params: CreateOrderParams): Promise<{ order: O
  * pedido que ya esta en cola de preparacion (RECEIVED) — asi el estimado que se le da al
  * cliente refleja como esta la cocina de verdad, no un numero fijo.
  */
-export async function estimateDeliveryMinutes(baseEstimateMinutes: number): Promise<number> {
+export async function estimateDeliveryMinutes(restaurantId: string, baseEstimateMinutes: number): Promise<number> {
+  // La cola es la de ESTE negocio: los pedidos de otro restaurante no le retrasan la cocina.
   const queueLength = await prisma.order.count({
-    where: { status: OrderStatus.RECEIVED },
+    where: { restaurantId, status: OrderStatus.RECEIVED },
   });
   const EXTRA_MINUTES_PER_ORDER_AHEAD = 5;
   return baseEstimateMinutes + queueLength * EXTRA_MINUTES_PER_ORDER_AHEAD;
@@ -418,12 +422,14 @@ function buildSuggestedAction(reason: OrderOperationalAlert["reason"], deliveryT
 }
 
 export async function getActiveOperationalAlerts(params: {
+  restaurantId: string;
   estimatedPrepMinutes: number;
   now?: Date;
 }): Promise<ActiveOrderOperationalAlertDTO[]> {
-  const { estimatedPrepMinutes, now = new Date() } = params;
+  const { restaurantId, estimatedPrepMinutes, now = new Date() } = params;
   const orders = await prisma.order.findMany({
     where: {
+      restaurantId,
       status: { in: [OrderStatus.AWAITING_PAYMENT, OrderStatus.RECEIVED, OrderStatus.READY] },
     },
     orderBy: { createdAt: "asc" },
@@ -441,12 +447,14 @@ export async function getActiveOperationalAlerts(params: {
 }
 
 export async function auditOrdersForOperationalRisk(params: {
+  restaurantId: string;
   estimatedPrepMinutes: number;
   now?: Date;
 }): Promise<{ flagged: number; hits: OperationalRiskAuditHit[] }> {
-  const { estimatedPrepMinutes, now = new Date() } = params;
+  const { restaurantId, estimatedPrepMinutes, now = new Date() } = params;
   const orders = await prisma.order.findMany({
     where: {
+      restaurantId,
       status: { in: [OrderStatus.AWAITING_PAYMENT, OrderStatus.RECEIVED, OrderStatus.READY] },
     },
     ...orderWithItems,

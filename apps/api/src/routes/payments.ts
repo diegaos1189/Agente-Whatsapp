@@ -10,11 +10,32 @@ import {
   reconcilePayments,
   toPaymentDTO,
 } from "../modules/payments/paymentService.js";
+import { prisma } from "../db/prisma.js";
+import { resolveRestaurantId } from "../modules/platform/restaurantContext.js";
+
+/**
+ * Pedido del restaurante del request. Los pagos no llevan restaurante propio (cuelgan del
+ * pedido), asi que este es el chequeo que impide cobrar o reembolsar el pedido de otro.
+ */
+async function findOwnOrder(request: Parameters<typeof resolveRestaurantId>[0], orderId: string) {
+  return prisma.order.findFirst({
+    where: { id: orderId, restaurantId: await resolveRestaurantId(request) },
+    select: { id: true },
+  });
+}
+
+/** Idem para un pago, resuelto a traves de su pedido. */
+async function findOwnPayment(request: Parameters<typeof resolveRestaurantId>[0], paymentId: string) {
+  return prisma.payment.findFirst({
+    where: { id: paymentId, order: { restaurantId: await resolveRestaurantId(request) } },
+    select: { id: true },
+  });
+}
 
 export async function paymentRoutes(app: FastifyInstance) {
   app.get("/api/payments", async (request) => {
     requirePermission(request, "facturacion");
-    const payments = await listPayments();
+    const payments = await listPayments(await resolveRestaurantId(request));
     return payments.map(toPaymentDTO);
   });
 
@@ -38,6 +59,10 @@ export async function paymentRoutes(app: FastifyInstance) {
         checkoutVersion: z.number().int().min(0).nullable().optional(),
       })
       .parse(request.body);
+
+    if (!(await findOwnOrder(request, id))) {
+      return reply.status(404).send({ error: "Pedido no encontrado" });
+    }
 
     const payment = await createPaymentForOrder({
       orderId: id,
@@ -63,6 +88,9 @@ export async function paymentRoutes(app: FastifyInstance) {
         idempotencyKey: z.string().min(1).optional(),
       })
       .parse(request.body);
+    if (!(await findOwnPayment(request, id))) {
+      return reply.status(404).send({ error: "Pago no encontrado" });
+    }
     try {
       const actor = getAdminActor(request);
       return await createRefund({
@@ -88,6 +116,9 @@ export async function paymentRoutes(app: FastifyInstance) {
         providerReference: z.string().optional(),
       })
       .parse(request.body);
+    if (!(await findOwnPayment(request, id)) || !(await findOwnOrder(request, body.orderId))) {
+      return reply.status(404).send({ error: "Pago no encontrado" });
+    }
     await markPaymentPaid({
       paymentId: id,
       orderId: body.orderId,
@@ -101,6 +132,6 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   app.post("/api/payments/reconcile", async (request) => {
     requirePermission(request, "facturacion");
-    return reconcilePayments();
+    return reconcilePayments({ restaurantId: await resolveRestaurantId(request) });
   });
 }

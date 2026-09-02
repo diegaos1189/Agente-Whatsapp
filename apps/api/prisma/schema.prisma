@@ -13,51 +13,62 @@ datasource db {
 // ---------- Contacto y conversacion ----------
 
 model Contact {
-  id        String   @id @default(cuid())
-  phone     String   @unique
-  name      String?
-  marketingOptInAt DateTime?
-  marketingOptInSource String?
-  marketingOptOutAt DateTime?
-  marketingOptOutReason String?
-  cartRecoveryOptOutAt DateTime?
+  id                       String             @id @default(cuid())
+  /// Restaurante al que le escribe este numero. El mismo celular puede ser cliente de dos
+  /// negocios distintos de la plataforma: son dos contactos, cada uno con su historial.
+  restaurantId             String
+  restaurant               PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  phone                    String
+  name                     String?
+  marketingOptInAt         DateTime?
+  marketingOptInSource     String?
+  marketingOptOutAt        DateTime?
+  marketingOptOutReason    String?
+  cartRecoveryOptOutAt     DateTime?
   cartRecoveryOptOutReason String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 
-  conversations Conversation[]
-  orders        Order[]
-  addresses     Address[]
+  conversations           Conversation[]
+  orders                  Order[]
+  addresses               Address[]
   inboundWhatsAppMessages InboundWhatsAppMessage[]
   messageProcessingLease  ContactMessageProcessingLease?
-  cartRecoveries CartRecovery[]
-  reactivationCampaigns CustomerReactivationCampaign[]
+  cartRecoveries          CartRecovery[]
+  reactivationCampaigns   CustomerReactivationCampaign[]
 
+  @@unique([restaurantId, phone])
+  @@index([restaurantId])
   @@map("contacts")
 }
 
 model Conversation {
-  id            String    @id @default(cuid())
-  contactId     String
-  contact       Contact   @relation(fields: [contactId], references: [id])
-  status        String    @default("ACTIVE") // ConversationStatus
-  isHandoff     Boolean   @default(false)
-  handoffReason String?
+  id                  String             @id @default(cuid())
+  /// Denormalizado desde el contacto a proposito: el panel lista conversaciones por
+  /// restaurante y no queremos un join a contacts en cada consulta del inbox.
+  restaurantId        String
+  restaurant          PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  contactId           String
+  contact             Contact            @relation(fields: [contactId], references: [id])
+  status              String             @default("ACTIVE") // ConversationStatus
+  isHandoff           Boolean            @default(false)
+  handoffReason       String?
   assignedAdminUserId String?
-  assignedAdminUser   AdminUser? @relation("ConversationAssignee", fields: [assignedAdminUserId], references: [id], onDelete: SetNull)
-  takenAt       DateTime?
-  failedAttempts Int      @default(0)
+  assignedAdminUser   AdminUser?         @relation("ConversationAssignee", fields: [assignedAdminUserId], references: [id], onDelete: SetNull)
+  takenAt             DateTime?
+  failedAttempts      Int                @default(0)
   // Estado de la maquina de conversacion: paso actual del pedido, carrito en progreso, slots pendientes.
-  context       Json      @default("{}")
-  lastMessageAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  context             Json               @default("{}")
+  lastMessageAt       DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
-  messages Message[]
-  handoffs Handoff[]
-  auditEvents ConversationAuditEvent[]
+  messages       Message[]
+  handoffs       Handoff[]
+  auditEvents    ConversationAuditEvent[]
   cartRecoveries CartRecovery[]
 
+  @@index([restaurantId, status, lastMessageAt])
   @@map("conversations")
 }
 
@@ -69,7 +80,7 @@ model Message {
   type           String // MessageType
   senderType     String? // CUSTOMER | BOT | HUMAN | SYSTEM
   adminUserId    String?
-  adminUser      AdminUser? @relation("AdminUserMessages", fields: [adminUserId], references: [id], onDelete: SetNull)
+  adminUser      AdminUser?   @relation("AdminUserMessages", fields: [adminUserId], references: [id], onDelete: SetNull)
   body           String
   // Notas de voz del cliente: se guarda como data URL (base64) para que el panel admin
   // pueda reproducirlas. No hay bucket de almacenamiento configurado en este template, asi
@@ -96,24 +107,24 @@ model ProcessedWhatsAppMessage {
 }
 
 model InboundWhatsAppMessage {
-  id                  BigInt   @id @default(autoincrement())
-  waMessageId         String   @unique
+  id                  BigInt    @id @default(autoincrement())
+  waMessageId         String    @unique
   contactId           String
-  contact             Contact  @relation(fields: [contactId], references: [id])
+  contact             Contact   @relation(fields: [contactId], references: [id])
   fromPhone           String
   customerName        String?
   inboundType         String
   text                String?
   mediaId             String?
   providerTimestamp   String?
-  processingStatus    String   @default("PENDING")
-  attempts            Int      @default(0)
+  processingStatus    String    @default("PENDING")
+  attempts            Int       @default(0)
   processingStartedAt DateTime?
   processedAt         DateTime?
   lastError           String?
   leaseExpiresAt      DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([contactId, id])
   @@index([contactId, processingStatus, id])
@@ -122,16 +133,16 @@ model InboundWhatsAppMessage {
 }
 
 model ContactMessageProcessingLease {
-  contactId        String   @id
-  contact          Contact  @relation(fields: [contactId], references: [id])
+  contactId        String    @id
+  contact          Contact   @relation(fields: [contactId], references: [id])
   leaseToken       String
   leaseExpiresAt   DateTime
   processingState  String
   currentMessageId BigInt?
   lastHeartbeatAt  DateTime?
   lastFinishedAt   DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([leaseExpiresAt])
   @@map("contact_message_processing_leases")
@@ -140,18 +151,18 @@ model ContactMessageProcessingLease {
 // ---------- Catalogo ----------
 
 model Category {
-  id        String    @id @default(cuid())
+  id                  String                  @id @default(cuid())
   /// Restaurante dueño de esta categoria. El catalogo esta aislado por restaurante: dos
   /// negocios distintos pueden tener ambos una categoria "bebidas" sin pisarse.
-  restaurantId String
-  restaurant   PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  name      String
-  slug      String
-  sortOrder Int       @default(0)
-  parentCategoryId String?
-  parent    Category? @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id])
-  children  Category[] @relation("CategoryHierarchy")
-  products  Product[]
+  restaurantId        String
+  restaurant          PlatformRestaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name                String
+  slug                String
+  sortOrder           Int                     @default(0)
+  parentCategoryId    String?
+  parent              Category?               @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id])
+  children            Category[]              @relation("CategoryHierarchy")
+  products            Product[]
   recommendationRules ProductRecommendation[]
 
   @@unique([restaurantId, slug])
@@ -160,45 +171,45 @@ model Category {
 }
 
 model Product {
-  id          String   @id @default(cuid())
+  id               String             @id @default(cuid())
   /// Restaurante dueño del producto. Se guarda aqui ademas de en la categoria para poder
   /// acotar por restaurante sin join, y para detectar un categoryId de otro restaurante.
-  restaurantId String
-  restaurant   PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id])
-  name        String
-  description String?
-  price       Int // COP, entero
-  isAvailable Boolean  @default(true)
-  sortOrder   Int      @default(0)
+  restaurantId     String
+  restaurant       PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  categoryId       String
+  category         Category           @relation(fields: [categoryId], references: [id])
+  name             String
+  description      String?
+  price            Int // COP, entero
+  isAvailable      Boolean            @default(true)
+  sortOrder        Int                @default(0)
   /// Cuando el cliente pide algo ambiguo que matchea varias variantes del mismo producto
   /// por igual (ej: "un pollo" sin decir cuantas presas), se ofrece la marcada como default
   /// en vez de la primera del catalogo al azar. Configurable por negocio desde el panel.
-  isDefaultVariant Boolean  @default(false)
+  isDefaultVariant Boolean            @default(false)
   /// Sinonimos/frases que los clientes usan y que no estan literalmente en el nombre (ej:
   /// "pollo entero" para el combo de 8 presas). Se suman al matching junto con nombre+categoria.
-  searchKeywords String?
+  searchKeywords   String?
   /// Cantidad de unidades/piezas que trae esta variante (ej: 8 para "8 presas", 6 para un
   /// six-pack). Opcional — solo aplica a productos donde eso tiene sentido. Se le pasa a la
   /// IA como dato real para que no invente ni confunda la cantidad con el numero de pedido.
-  unitCount   Int?
+  unitCount        Int?
   /// Si es true, este producto es un combo armado con otros productos del catalogo
   /// (ver comboItems) — en vez de un item suelto con precio propio sin composicion clara.
-  isCombo     Boolean  @default(false)
+  isCombo          Boolean            @default(false)
   /// Productos que componen el combo: [{ productId, quantity }], maximo 6. Solo aplica si
   /// isCombo=true. Se usa para describirle al cliente exactamente que incluye, sin inventar.
-  comboItems  Json     @default("[]")
+  comboItems       Json               @default("[]")
   /// Si aparece en el mensaje de menu que el bot le manda al cliente. Sigue disponible
   /// para pedir por nombre aunque este apagado (ej: componentes que solo se venden dentro
   /// de un combo, no sueltos en la lista general).
-  showInMenu  Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  showInMenu       Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  orderItems OrderItem[]
-  promotions Promotion[]
-  recommendationsAsSource     ProductRecommendation[] @relation("RecommendationSourceProduct")
+  orderItems                   OrderItem[]
+  promotions                   Promotion[]
+  recommendationsAsSource      ProductRecommendation[] @relation("RecommendationSourceProduct")
   recommendationsAsRecommended ProductRecommendation[] @relation("RecommendationRecommendedProduct")
 
   @@index([restaurantId])
@@ -206,23 +217,27 @@ model Product {
 }
 
 model Promotion {
-  id          String    @id @default(cuid())
-  title       String
-  description String
-  isActive    Boolean   @default(true)
-  startsAt    DateTime?
-  endsAt      DateTime?
+  id            String             @id @default(cuid())
+  /// Restaurante dueño de la promocion: el bot solo ofrece las del negocio que atiende.
+  restaurantId  String
+  restaurant    PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  title         String
+  description   String
+  isActive      Boolean            @default(true)
+  startsAt      DateTime?
+  endsAt        DateTime?
   /// Producto al que aplica el descuento (opcional — una promo puede ser general, sin
   /// producto especifico, y quedar descrita solo en "description").
   productId     String?
-  product       Product? @relation(fields: [productId], references: [id])
+  product       Product?           @relation(fields: [productId], references: [id])
   discountType  String? // "PERCENTAGE" | "FIXED_AMOUNT", null si no aplica descuento estructurado
   discountValue Int? // porcentaje (0-100) o monto fijo en la moneda del negocio, segun discountType
   /// Dias de la semana en que aplica (0=domingo ... 6=sabado), igual que Date.getDay(). Vacio
   /// ([]) significa que aplica todos los dias.
-  daysOfWeek    Json      @default("[]")
-  createdAt   DateTime  @default(now())
+  daysOfWeek    Json               @default("[]")
+  createdAt     DateTime           @default(now())
 
+  @@index([restaurantId])
   @@map("promotions")
 }
 
@@ -231,32 +246,41 @@ model Promotion {
 /// oferta que ya resolvio backend (ver recommendationService.ts). Exactamente uno de
 /// sourceProductId/sourceCategoryId debe estar definido (regla por producto o por categoria).
 model ProductRecommendation {
-  id                    String   @id @default(cuid())
-  sourceProductId       String?
-  sourceProduct         Product? @relation("RecommendationSourceProduct", fields: [sourceProductId], references: [id], onDelete: Cascade)
-  sourceCategoryId      String?
-  sourceCategory        Category? @relation(fields: [sourceCategoryId], references: [id], onDelete: Cascade)
-  recommendedProductId  String
-  recommendedProduct    Product  @relation("RecommendationRecommendedProduct", fields: [recommendedProductId], references: [id], onDelete: Cascade)
-  recommendationType    String // "UPSELL" | "CROSS_SELL" | "ADD_ON"
-  priority              Int      @default(0)
-  active                Boolean  @default(true)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                   String             @id @default(cuid())
+  /// Restaurante dueño de la regla. Redundante con el restaurante de los productos que
+  /// referencia, pero permite listarlas y borrarlas sin joins y bloquea reglas cruzadas.
+  restaurantId         String
+  restaurant           PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sourceProductId      String?
+  sourceProduct        Product?           @relation("RecommendationSourceProduct", fields: [sourceProductId], references: [id], onDelete: Cascade)
+  sourceCategoryId     String?
+  sourceCategory       Category?          @relation(fields: [sourceCategoryId], references: [id], onDelete: Cascade)
+  recommendedProductId String
+  recommendedProduct   Product            @relation("RecommendationRecommendedProduct", fields: [recommendedProductId], references: [id], onDelete: Cascade)
+  recommendationType   String // "UPSELL" | "CROSS_SELL" | "ADD_ON"
+  priority             Int                @default(0)
+  active               Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   @@index([sourceProductId])
   @@index([sourceCategoryId])
+  @@index([restaurantId])
   @@map("product_recommendations")
 }
 
 model Faq {
-  id        String   @id @default(cuid())
-  question  String
-  answer    String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String             @id @default(cuid())
+  /// Restaurante dueño de la respuesta: cada negocio contesta con su propia informacion.
+  restaurantId String
+  restaurant   PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  question     String
+  answer       String
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
+  @@index([restaurantId])
   @@map("faqs")
 }
 
@@ -279,45 +303,51 @@ model Address {
 // ---------- Pedidos ----------
 
 model Order {
-  id            String   @id @default(cuid())
-  code          String   @unique
+  id               String             @id @default(cuid())
+  /// Restaurante que tiene que preparar y cobrar este pedido. Denormalizado desde el
+  /// contacto para que Pedidos, Cocina, Facturacion y Metricas filtren por una sola columna.
+  restaurantId     String
+  restaurant       PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  code             String             @unique
   /// Idempotencia especifica del checkout confirmado. Null para pedidos manuales o legacy.
-  confirmationId String? @unique
-  contactId     String
-  contact       Contact  @relation(fields: [contactId], references: [id])
-  status        String   @default("RECEIVED") // OrderStatus
-  deliveryType  String // DeliveryType
-  paymentMethod String? // PaymentMethod
-  paymentStatus String   @default("PENDING") // PaymentStatus
-  total         Int      @default(0)
-  deliveryFee   Int      @default(0)
-  address       String?
-  neighborhood  String?
-  reference     String?
+  confirmationId   String?            @unique
+  contactId        String
+  contact          Contact            @relation(fields: [contactId], references: [id])
+  status           String             @default("RECEIVED") // OrderStatus
+  deliveryType     String // DeliveryType
+  paymentMethod    String? // PaymentMethod
+  paymentStatus    String             @default("PENDING") // PaymentStatus
+  total            Int                @default(0)
+  deliveryFee      Int                @default(0)
+  address          String?
+  neighborhood     String?
+  reference        String?
   /// Numero para que el domiciliario contacte al cliente al entregar. Por defecto es el
   /// mismo numero de WhatsApp desde el que escribio, pero el cliente puede dar uno distinto
   /// (ej: esta pidiendo desde un celular ajeno o para alguien mas).
-  contactPhone  String?
-  scheduledFor  DateTime?
+  contactPhone     String?
+  scheduledFor     DateTime?
   /// true si el cliente hizo otro pedido mientras este seguia sin despachar (RECEIVED) —
   /// alerta visual en el panel para que el operador revise si hay que combinarlos.
-  flaggedForReview Boolean @default(false)
+  flaggedForReview Boolean            @default(false)
   flagNote         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   items    OrderItem[]
   payments Payment[]
   events   OrderEvent[]
 
   @@index([contactId, createdAt])
+  @@index([restaurantId, createdAt])
+  @@index([restaurantId, status])
   @@map("orders")
 }
 
 model OrderItem {
-  id        String   @id @default(cuid())
-  orderId   String
-  order     Order    @relation(fields: [orderId], references: [id])
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
   /// Nullable a proposito: el producto se puede borrar del catalogo despues sin romper
   /// pedidos ya facturados (SetNull). Lo que realmente importa del historial es el nombre
   /// y el precio ya guardados abajo, no que el producto siga vivo en el catalogo.
@@ -333,83 +363,82 @@ model OrderItem {
 }
 
 model Payment {
-  id            String    @id @default(cuid())
-  orderId       String
-  order         Order     @relation(fields: [orderId], references: [id])
-  method        String // PaymentMethod
-  status        String    @default("PENDING") // PaymentStatus
-  amount        Int
-  currency      String    @default("COP")
-  provider      String    @default("MANUAL")
-  idempotencyKey String?
-  checkoutVersion Int?
+  id                String    @id @default(cuid())
+  orderId           String
+  order             Order     @relation(fields: [orderId], references: [id])
+  method            String // PaymentMethod
+  status            String    @default("PENDING") // PaymentStatus
+  amount            Int
+  currency          String    @default("COP")
+  provider          String    @default("MANUAL")
+  idempotencyKey    String?
+  checkoutVersion   Int?
   providerPaymentId String?
   providerReference String?
   externalReference String?
-  paidAmount     Int      @default(0)
-  refundedAmount Int      @default(0)
-  paymentUrl     String?
-  expiresAt      DateTime?
-  proofImageUrl String?
-  failureCode   String?
-  failureMessage String?
-  metadata      Json      @default("{}")
-  reportedAt    DateTime?
-  authorizedAt  DateTime?
-  paidAt        DateTime?
-  failedAt      DateTime?
-  cancelledAt   DateTime?
-  confirmedAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  paidAmount        Int       @default(0)
+  refundedAmount    Int       @default(0)
+  paymentUrl        String?
+  expiresAt         DateTime?
+  proofImageUrl     String?
+  failureCode       String?
+  failureMessage    String?
+  metadata          Json      @default("{}")
+  reportedAt        DateTime?
+  authorizedAt      DateTime?
+  paidAt            DateTime?
+  failedAt          DateTime?
+  cancelledAt       DateTime?
+  confirmedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  refunds       PaymentRefund[]
-  webhookEvents PaymentWebhookEvent[]
+  refunds              PaymentRefund[]
+  webhookEvents        PaymentWebhookEvent[]
   reconciliationIssues PaymentReconciliationIssue[]
 
+  @@unique([provider, providerPaymentId])
+  @@unique([provider, idempotencyKey])
   @@index([orderId, createdAt])
   @@index([status, createdAt])
   @@index([provider, providerReference])
-  @@unique([provider, providerPaymentId])
-  @@unique([provider, idempotencyKey])
-
   @@map("payments")
 }
 
 model PaymentRefund {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   paymentId        String
-  payment          Payment  @relation(fields: [paymentId], references: [id])
+  payment          Payment   @relation(fields: [paymentId], references: [id])
   amount           Int
-  currency         String   @default("COP")
-  status           String   @default("PENDING")
+  currency         String    @default("COP")
+  status           String    @default("PENDING")
   idempotencyKey   String?
   providerRefundId String?
   reasonCode       String?
   requestedBy      String?
-  metadata         Json     @default("{}")
+  metadata         Json      @default("{}")
   completedAt      DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  @@index([paymentId, createdAt])
   @@unique([paymentId, idempotencyKey])
+  @@index([paymentId, createdAt])
   @@map("payment_refunds")
 }
 
 model PaymentWebhookEvent {
-  id                 String   @id @default(cuid())
-  paymentId          String?
-  payment            Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  provider           String
-  eventId            String
-  eventType          String
-  status             String   @default("RECEIVED")
-  providerReference  String?
-  rawPayload         Json     @default("{}")
-  receivedAt         DateTime @default(now())
-  processedAt        DateTime?
-  createdAt          DateTime @default(now())
+  id                String    @id @default(cuid())
+  paymentId         String?
+  payment           Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  provider          String
+  eventId           String
+  eventType         String
+  status            String    @default("RECEIVED")
+  providerReference String?
+  rawPayload        Json      @default("{}")
+  receivedAt        DateTime  @default(now())
+  processedAt       DateTime?
+  createdAt         DateTime  @default(now())
 
   @@unique([provider, eventId])
   @@index([provider, providerReference])
@@ -417,11 +446,11 @@ model PaymentWebhookEvent {
 }
 
 model PaymentReconciliationIssue {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   paymentId         String?
-  payment           Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  payment           Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
   issueType         String
-  severity          String   @default("WARNING")
+  severity          String    @default("WARNING")
   expectedAmount    Int?
   providerAmount    Int?
   expectedCurrency  String?
@@ -429,7 +458,7 @@ model PaymentReconciliationIssue {
   providerReference String?
   note              String?
   resolvedAt        DateTime?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
   @@index([issueType, createdAt])
   @@index([paymentId, createdAt])
@@ -450,17 +479,17 @@ model OrderEvent {
 // ---------- Escalamiento humano ----------
 
 model Handoff {
-  id             String       @id @default(cuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  reason         String // HandoffReason
-  note           String?
+  id                     String       @id @default(cuid())
+  conversationId         String
+  conversation           Conversation @relation(fields: [conversationId], references: [id])
+  reason                 String // HandoffReason
+  note                   String?
   requestedByAdminUserId String?
-  requestedByAdminUser   AdminUser? @relation("RequestedHandoffs", fields: [requestedByAdminUserId], references: [id], onDelete: SetNull)
+  requestedByAdminUser   AdminUser?   @relation("RequestedHandoffs", fields: [requestedByAdminUserId], references: [id], onDelete: SetNull)
   resolvedByAdminUserId  String?
-  resolvedByAdminUser    AdminUser? @relation("ResolvedHandoffs", fields: [resolvedByAdminUserId], references: [id], onDelete: SetNull)
-  resolvedAt     DateTime?
-  createdAt      DateTime     @default(now())
+  resolvedByAdminUser    AdminUser?   @relation("ResolvedHandoffs", fields: [resolvedByAdminUserId], references: [id], onDelete: SetNull)
+  resolvedAt             DateTime?
+  createdAt              DateTime     @default(now())
 
   @@map("handoffs")
 }
@@ -483,71 +512,71 @@ model ConversationAuditEvent {
 // ---------- Configuracion del negocio ----------
 
 model BusinessSettings {
-  id                     String   @id @default(cuid())
+  id                           String             @id @default(cuid())
   /// Restaurante al que pertenece esta configuracion: exactamente una fila por restaurante.
-  restaurantId           String   @unique
-  restaurant             PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  restaurantName         String
+  restaurantId                 String             @unique
+  restaurant                   PlatformRestaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantName               String
   /// Logo del negocio (data URL base64) para mostrar en el panel admin, arriba del menu.
-  logoUrl                String?
+  logoUrl                      String?
   /// Fotos generales del menu (data URLs base64), maximo 5 — el bot las manda cuando el
   /// cliente pide ver el menu, antes de la lista de categorias numerada.
-  menuImages             String[] @default([])
-  phone                  String
-  address                String
-  currency               String   @default("COP")
-  timezone               String   @default("America/Bogota")
-  openingHours           Json // { mon: {open, close} | null, ... }
-  deliveryFee            Int      @default(0)
+  menuImages                   String[]           @default([])
+  phone                        String
+  address                      String
+  currency                     String             @default("COP")
+  timezone                     String             @default("America/Bogota")
+  openingHours                 Json // { mon: {open, close} | null, ... }
+  deliveryFee                  Int                @default(0)
   /// Si el negocio permite pedidos para entrega a domicilio.
-  acceptsDelivery        Boolean  @default(true)
+  acceptsDelivery              Boolean            @default(true)
   /// Si el negocio permite pedidos para recoger en el local.
-  acceptsPickup          Boolean  @default(true)
+  acceptsPickup                Boolean            @default(true)
   /// Pedido minimo para domicilios. 0 = sin minimo.
-  minimumDeliveryOrder   Int      @default(0)
+  minimumDeliveryOrder         Int                @default(0)
   /// Lista opcional de palabras clave de cobertura (barrios, zonas, sectores). Vacio = sin restriccion.
-  deliveryCoverageKeywords String[] @default([])
-  estimatedPrepMinutes   Int      @default(30)
-  acceptsScheduledOrders Boolean  @default(false)
+  deliveryCoverageKeywords     String[]           @default([])
+  estimatedPrepMinutes         Int                @default(30)
+  acceptsScheduledOrders       Boolean            @default(false)
   /// Metodos de pago que este negocio acepta (subconjunto de CASH/TRANSFER/CARD_ON_DELIVERY).
   /// Configurable desde el panel — el bot solo ofrece los que esten aqui.
-  acceptedPaymentMethods String[] @default(["CASH", "TRANSFER", "CARD_ON_DELIVERY"])
+  acceptedPaymentMethods       String[]           @default(["CASH", "TRANSFER", "CARD_ON_DELIVERY"])
   /// Cuentas para pagos por transferencia (maximo 4), solo aplica si TRANSFER esta en
   /// acceptedPaymentMethods. Cada una: { bankName, accountInfo, qrImage }. Se le comparten
   /// al cliente cuando elige pagar por transferencia.
-  transferAccounts Json @default("[]")
+  transferAccounts             Json               @default("[]")
   /// Hora (HH:MM, zona horaria = timezone de arriba) en la que se archivan automaticamente todas las conversaciones activas del dia.
-  dailyArchiveTime       String   @default("23:30")
-  outOfHoursMessage      String
-  welcomeMessage         String
+  dailyArchiveTime             String             @default("23:30")
+  outOfHoursMessage            String
+  welcomeMessage               String
   /// Nombre propio del agente/asistente virtual (ej: "Sara"). Se usa en el saludo inicial
   /// ("Hola, bienvenido a {negocio}, me llamo {agentName}") — vacio = no menciona nombre propio.
-  agentName              String   @default("")
+  agentName                    String             @default("")
   /// Como debe sonar el asistente al redactar respuestas (tono/personalidad), ej: "calido y cercano, con humor ligero".
-  assistantTone          String   @default("Anfitrion virtual del negocio: atencion rapida, amable y personalizada. Ayuda a conocer el menu, recomienda segun gustos, resuelve dudas y gestiona pedidos con calidez y profesionalismo. Prioriza la satisfaccion del cliente, responde con claridad y nunca inventa informacion.")
-  cartRecoveryEnabled    Boolean  @default(false)
-  cartRecoveryDelayMinutes Int    @default(90)
-  cartRecoveryMaxAttempts Int     @default(1)
-  cartRecoveryMessage    String   @default("Hola 👋 Dejaste un pedido pendiente. Si quieres, seguimos desde donde quedamos.")
+  assistantTone                String             @default("Anfitrion virtual del negocio: atencion rapida, amable y personalizada. Ayuda a conocer el menu, recomienda segun gustos, resuelve dudas y gestiona pedidos con calidez y profesionalismo. Prioriza la satisfaccion del cliente, responde con claridad y nunca inventa informacion.")
+  cartRecoveryEnabled          Boolean            @default(false)
+  cartRecoveryDelayMinutes     Int                @default(90)
+  cartRecoveryMaxAttempts      Int                @default(1)
+  cartRecoveryMessage          String             @default("Hola 👋 Dejaste un pedido pendiente. Si quieres, seguimos desde donde quedamos.")
   /// Activa el upsell/cross-sell proactivo (ver ProductRecommendation). Apagado por
   /// defecto — opt-in conservador por deployment, igual que cartRecoveryEnabled.
-  upsellEnabled          Boolean  @default(false)
+  upsellEnabled                Boolean            @default(false)
   /// Maximo de ofertas de upsell distintas por carrito (no reintentos del mismo producto).
-  maxUpsellOffers        Int      @default(1)
+  maxUpsellOffers              Int                @default(1)
   /// Credenciales de la cuenta de WhatsApp Cloud API de ESTE cliente/negocio — editables
   /// desde Configuracion (panel admin) sin tocar .env ni redesplegar. "mock" no llama a Meta.
-  whatsappProvider       String   @default("mock")
-  whatsappPhoneNumberId  String   @default("")
-  whatsappToken          String   @default("")
-  whatsappAppSecret      String   @default("")
-  whatsappVerifyToken    String   @default("")
-  whatsappApiVersion     String   @default("v21.0")
-  reactivationEnabled    Boolean  @default(false)
-  reactivationTemplateName String @default("")
-  reactivationTemplateLanguage String @default("es_CO")
-  reactivationDormantDays Int     @default(30)
-  reactivationCooldownDays Int    @default(30)
-  updatedAt              DateTime @updatedAt
+  whatsappProvider             String             @default("mock")
+  whatsappPhoneNumberId        String             @default("")
+  whatsappToken                String             @default("")
+  whatsappAppSecret            String             @default("")
+  whatsappVerifyToken          String             @default("")
+  whatsappApiVersion           String             @default("v21.0")
+  reactivationEnabled          Boolean            @default(false)
+  reactivationTemplateName     String             @default("")
+  reactivationTemplateLanguage String             @default("es_CO")
+  reactivationDormantDays      Int                @default(30)
+  reactivationCooldownDays     Int                @default(30)
+  updatedAt                    DateTime           @updatedAt
 
   @@map("business_settings")
 }
@@ -581,20 +610,20 @@ model CartRecovery {
 }
 
 model CustomerReactivationCampaign {
-  id               String   @id @default(cuid())
-  contactId        String
-  contact          Contact  @relation(fields: [contactId], references: [id])
-  status           String   @default("PENDING")
-  templateName     String
-  templateLanguage String
-  dormantDays      Int
-  lastOrderAt      DateTime
+  id                String    @id @default(cuid())
+  contactId         String
+  contact           Contact   @relation(fields: [contactId], references: [id])
+  status            String    @default("PENDING")
+  templateName      String
+  templateLanguage  String
+  dormantDays       Int
+  lastOrderAt       DateTime
   providerMessageId String?
-  skipReason       String?
-  sentAt           DateTime?
-  convertedOrderId String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  skipReason        String?
+  sentAt            DateTime?
+  convertedOrderId  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([contactId, createdAt])
   @@index([status, createdAt])
@@ -622,9 +651,16 @@ model PlatformRestaurant {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  settings   BusinessSettings?
-  categories Category[]
-  products   Product[]
+  settings        BusinessSettings?
+  categories      Category[]
+  products        Product[]
+  contacts        Contact[]
+  conversations   Conversation[]
+  orders          Order[]
+  promotions      Promotion[]
+  faqs            Faq[]
+  recommendations ProductRecommendation[]
+  adminUsers      AdminUser[]
 
   @@map("platform_restaurants")
 }
@@ -649,19 +685,25 @@ model Lead {
 // ---------- Usuarios del panel admin ----------
 
 model AdminUser {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  passwordHash String
-  role         String   @default("STAFF") // "ADMIN" | "STAFF"
+  id                      String                   @id @default(cuid())
+  username                String                   @unique
+  passwordHash            String
+  /// Restaurante al que pertenece este usuario. null = usuario de la plataforma (el dueño
+  /// del producto): entra a /super-admin y al panel de cualquier cliente. Con restaurante,
+  /// el login cae directo en /<slug> y no puede salirse de ahi.
+  restaurantId            String?
+  restaurant              PlatformRestaurant?      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  role                    String                   @default("STAFF") // "ADMIN" | "STAFF"
   /// Solo aplica si role = STAFF: secciones del panel habilitadas (ej: ["orders","conversations"]). ADMIN siempre tiene todas.
-  permissions  String[] @default([])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  assignedConversations Conversation[] @relation("ConversationAssignee")
-  messages     Message[] @relation("AdminUserMessages")
-  requestedHandoffs Handoff[] @relation("RequestedHandoffs")
-  resolvedHandoffs Handoff[] @relation("ResolvedHandoffs")
+  permissions             String[]                 @default([])
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  assignedConversations   Conversation[]           @relation("ConversationAssignee")
+  messages                Message[]                @relation("AdminUserMessages")
+  requestedHandoffs       Handoff[]                @relation("RequestedHandoffs")
+  resolvedHandoffs        Handoff[]                @relation("ResolvedHandoffs")
   conversationAuditEvents ConversationAuditEvent[] @relation("ConversationAuditEvents")
 
+  @@index([restaurantId])
   @@map("admin_users")
 }

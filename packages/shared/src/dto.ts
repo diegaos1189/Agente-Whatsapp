@@ -358,6 +358,13 @@ export interface RangeMetricsDTO {
 
 export interface BusinessSettingsDTO {
   id: string;
+  /**
+   * Restaurante dueño de esta configuracion. Va en el DTO a proposito: el objeto `settings`
+   * ya viaja por todo el flujo del bot, asi que llevar el restaurante adentro es lo que
+   * permite que cada paso (catalogo, promociones, envio por WhatsApp) sepa a quien atiende
+   * sin pasar el id a mano por cada firma.
+   */
+  restaurantId: string;
   restaurantName: string;
   logoUrl: string | null;
   menuImages: string[];

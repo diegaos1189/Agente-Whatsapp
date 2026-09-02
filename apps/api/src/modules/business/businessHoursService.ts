@@ -15,6 +15,7 @@ const CACHE_TTL_MS = 30_000;
 function toDTO(row: any): BusinessSettingsDTO {
   return {
     id: row.id,
+    restaurantId: row.restaurantId,
     restaurantName: row.restaurantName,
     logoUrl: row.logoUrl,
     menuImages: row.menuImages ?? [],
@@ -57,11 +58,12 @@ function toDTO(row: any): BusinessSettingsDTO {
   };
 }
 
-/** Lee la configuracion del negocio (fila unica) con cache corta en memoria. */
 /**
- * Configuracion del negocio. El restaurante es explicito desde el multi-tenant; se deja con
- * valor por defecto porque el bot de WhatsApp todavia no sabe a que restaurante corresponde
- * cada numero (eso llega con el ruteo por numero), y hasta entonces atiende al local.
+ * Configuracion de un restaurante, con cache corta en memoria.
+ *
+ * El restaurante es explicito: el panel lo saca del header y el bot del numero de WhatsApp
+ * que recibio el mensaje. El valor por defecto (el local) cubre el deployment de un solo
+ * negocio, donde no hay nada que rutear.
  */
 export async function getBusinessSettings(restaurantId: string = LOCAL_RESTAURANT_ID): Promise<BusinessSettingsDTO> {
   const cached = settingsCache.get(restaurantId);

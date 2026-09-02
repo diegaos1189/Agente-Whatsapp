@@ -6,8 +6,8 @@ function toDTO(faq: { id: string; question: string; answer: string; isActive: bo
   return { id: faq.id, question: faq.question, answer: faq.answer, isActive: faq.isActive };
 }
 
-export async function listAllFaqs(): Promise<FaqDTO[]> {
-  const faqs = await prisma.faq.findMany({ orderBy: { createdAt: "desc" } });
+export async function listAllFaqs(restaurantId: string): Promise<FaqDTO[]> {
+  const faqs = await prisma.faq.findMany({ where: { restaurantId }, orderBy: { createdAt: "desc" } });
   return faqs.map(toDTO);
 }
 
@@ -22,11 +22,11 @@ function meaningfulWords(text: string): string[] {
  * palabras. Exige al menos 2 palabras en comun para evitar falsos positivos (una sola
  * palabra compartida no alcanza para confiar en que es la misma pregunta).
  */
-export async function findFaqMatch(text: string): Promise<FaqDTO | null> {
+export async function findFaqMatch(restaurantId: string, text: string): Promise<FaqDTO | null> {
   const queryWords = new Set(meaningfulWords(text));
   if (queryWords.size === 0) return null;
 
-  const faqs = await prisma.faq.findMany({ where: { isActive: true } });
+  const faqs = await prisma.faq.findMany({ where: { restaurantId, isActive: true } });
   let best: { faq: (typeof faqs)[number]; score: number } | null = null;
 
   for (const faq of faqs) {

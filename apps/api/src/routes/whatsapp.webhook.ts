@@ -3,10 +3,12 @@ import { z } from "zod";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { isProduction } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import { prisma } from "../db/prisma.js";
 import { parseMetaWebhookPayload, type MetaWebhookPayload } from "../modules/whatsapp/whatsappTypes.js";
 import { handleIncomingMessage } from "../modules/conversation/conversationService.js";
 import { getWhatsAppClient } from "../modules/whatsapp/whatsappClient.js";
 import { getBusinessSettings } from "../modules/business/businessHoursService.js";
+import { resolveRestaurantIdByWhatsAppPhoneNumberId } from "../modules/platform/restaurantContext.js";
 import { incomingWhatsAppMessageIdempotencyService } from "../modules/whatsapp/incomingWhatsAppMessageIdempotencyService.js";
 
 const verifyQuerySchema = z.object({
@@ -32,13 +34,39 @@ function isValidMetaSignature(appSecret: string, rawBody: Buffer | undefined, si
   return timingSafeEqual(expectedBuffer, receivedBuffer);
 }
 
+/**
+ * Numero del negocio que recibio el lote (phone_number_id de Meta), leido del payload crudo.
+ *
+ * Todos los mensajes de un mismo POST llegan al mismo numero, asi que basta con mirar el
+ * primer `entry`. Se lee ANTES de verificar la firma porque es justamente lo que dice con que
+ * app secret hay que verificarla — el dato todavia no es de fiar aca, y por eso lo unico que
+ * se hace con el es elegir un restaurante; si el elegido no valida la firma, el request muere.
+ */
+function readPhoneNumberId(payload: MetaWebhookPayload): string | null {
+  for (const entry of payload.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const id = change.value?.metadata?.phone_number_id;
+      if (id) return id;
+    }
+  }
+  return null;
+}
+
 export async function whatsappWebhookRoutes(app: FastifyInstance) {
-  // Verificacion inicial del webhook por parte de Meta.
+  // Verificacion inicial del webhook por parte de Meta. Cada restaurante configura su propio
+  // verify token, asi que el reto se acepta si coincide con el de CUALQUIER restaurante: es
+  // la misma URL de webhook para todos y Meta no manda nada mas con que distinguirlos.
   app.get("/webhooks/whatsapp", async (request, reply) => {
     const query = verifyQuerySchema.parse(request.query);
-    const settings = await getBusinessSettings();
+    const token = query["hub.verify_token"] ?? "";
 
-    if (query["hub.mode"] === "subscribe" && query["hub.verify_token"] === settings.whatsappVerifyToken) {
+    // El token vacio nunca puede pasar: si algun restaurante todavia no lo configuro, su
+    // campo esta en "" y un reto sin token le calzaria.
+    const matches = token
+      ? await prisma.businessSettings.count({ where: { whatsappVerifyToken: token } })
+      : 0;
+
+    if (query["hub.mode"] === "subscribe" && matches > 0) {
       return reply.status(200).send(query["hub.challenge"] ?? "");
     }
 
@@ -48,26 +76,35 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
   // Mensajes entrantes. Siempre respondemos 200 rapido para que Meta no reintente
   // en bucle; los errores de procesamiento se loguean pero no se propagan al webhook.
   app.post("/webhooks/whatsapp", async (request, reply) => {
-    const settings = await getBusinessSettings();
+    const payload = request.body as MetaWebhookPayload;
+
+    // A que negocio le escribieron. Sin numero en el payload (curl de prueba, modo mock) cae
+    // al restaurante local, que es el comportamiento de un deployment de un solo negocio.
+    const restaurantId = await resolveRestaurantIdByWhatsAppPhoneNumberId(readPhoneNumberId(payload));
+    const settings = await getBusinessSettings(restaurantId);
 
     // En produccion con el proveedor real de Meta, el app secret es obligatorio: sin el
     // no se puede verificar la firma HMAC y cualquiera que conozca la URL podria inyectar
     // mensajes falsos (pedidos inventados, gasto de IA). Fallamos cerrado en vez de confiar.
+    // Esto tambien es lo que impide usar el ruteo de arriba para esquivar la verificacion:
+    // apuntarle a un restaurante sin app secret no abre la puerta, la cierra.
     if (isProduction && settings.whatsappProvider === "meta" && !settings.whatsappAppSecret) {
-      logger.error("Webhook de WhatsApp rechazado: falta el app secret en produccion (configuralo en Configuracion)");
+      logger.error(
+        { restaurantId },
+        "Webhook de WhatsApp rechazado: falta el app secret en produccion (configuralo en Configuracion)",
+      );
       return reply.status(403).send({ error: "Webhook sin verificacion configurada" });
     }
 
     const signature = request.headers["x-hub-signature-256"];
     if (!isValidMetaSignature(settings.whatsappAppSecret, request.rawBody, Array.isArray(signature) ? signature[0] : signature)) {
-      logger.warn("Webhook de WhatsApp con firma invalida, se rechaza");
+      logger.warn({ restaurantId }, "Webhook de WhatsApp con firma invalida, se rechaza");
       return reply.status(403).send({ error: "Firma invalida" });
     }
 
     reply.status(200).send({ received: true });
 
     try {
-      const payload = request.body as MetaWebhookPayload;
       const messages = parseMetaWebhookPayload(payload);
 
       for (const msg of messages) {
@@ -84,11 +121,12 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
 
         // Marca leido + "escribiendo..." de inmediato: la IA tarda unos segundos en
         // responder y esto le da feedback visual al cliente mientras tanto.
-        getWhatsAppClient()
+        getWhatsAppClient(restaurantId)
           .then((client) => client.markAsReadWithTyping(msg.waMessageId))
           .catch((error) => logger.warn({ err: error }, "Fallo mostrando indicador de escribiendo"));
 
         await handleIncomingMessage({
+          restaurantId,
           waMessageId: msg.waMessageId,
           phone: msg.from,
           name: msg.name,

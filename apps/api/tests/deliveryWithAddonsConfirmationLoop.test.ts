@@ -79,6 +79,7 @@ const state = vi.hoisted(() => ({
     },
   ],
   settings: {
+    restaurantId: "local-deployment",
     restaurantName: "Pollos Test",
     agentName: "Lina",
     welcomeMessage: "Bienvenido a Pollos Test",
@@ -119,6 +120,11 @@ vi.mock("../src/utils/logger.js", () => ({
 vi.mock("../src/db/prisma.js", () => {
   const contactApi = {
     findUnique: vi.fn(async ({ where }: any) => {
+      // El contacto ahora es unico por (restaurante, telefono), igual que en la base real.
+      if (where.restaurantId_phone) {
+        const { restaurantId, phone } = where.restaurantId_phone;
+        return state.contacts.find((item) => item.restaurantId === restaurantId && item.phone === phone) ?? null;
+      }
       if (where.phone) return state.contacts.find((item) => item.phone === where.phone) ?? null;
       if (where.id) return state.contacts.find((item) => item.id === where.id) ?? null;
       return null;
@@ -126,6 +132,7 @@ vi.mock("../src/db/prisma.js", () => {
     create: vi.fn(async ({ data }: any) => {
       const row = {
         id: `contact-${state.nextContactId++}`,
+        restaurantId: data.restaurantId ?? "local-deployment",
         phone: data.phone,
         name: data.name ?? null,
         cartRecoveryOptOutAt: null,
@@ -154,6 +161,7 @@ vi.mock("../src/db/prisma.js", () => {
     create: vi.fn(async ({ data }: any) => {
       const row = {
         id: `conv-${state.nextConversationId++}`,
+        restaurantId: "local-deployment",
         contactId: data.contactId,
         status: data.status ?? ConversationStatus.ACTIVE,
         isHandoff: false,
@@ -377,22 +385,22 @@ vi.mock("../src/modules/ai/aiClient.js", () => ({
 vi.mock("../src/modules/products/productService.js", () => ({
   listCatalog: vi.fn(async () => state.catalog),
   listActivePromotions: vi.fn(async () => []),
-  findBestProductMatch: vi.fn(async (query: string) => {
+  findBestProductMatch: vi.fn(async (_restaurantId: string, query: string) => {
     const normalized = query.trim().toLowerCase();
     const allProducts = state.catalog.flatMap((cat: any) => cat.products.map((p: any) => ({ ...p, categoryName: cat.name })));
     return allProducts.find((p: any) => p.name.toLowerCase() === normalized) ?? null;
   }),
-  findCategoryMatch: vi.fn(async (query: string) => {
+  findCategoryMatch: vi.fn(async (_restaurantId: string, query: string) => {
     const normalized = query.trim().toLowerCase();
     const category = state.catalog.find((cat: any) => cat.name.toLowerCase() === normalized);
     return category ? { categoryName: category.name, products: category.products } : null;
   }),
   applyPromotionDiscount: vi.fn(),
   isPromoActiveToday: vi.fn(() => true),
-  getEffectivePrice: vi.fn(async (_id: string, price: number) => price),
+  getEffectivePrice: vi.fn(async (_restaurantId: string, _id: string, price: number) => price),
   // Solo hace match EXACTO por nombre (case-insensitive) contra el catalogo de prueba —
   // suficiente para que el producto elegido por numero (forcedProductName) se resuelva.
-  resolveProductReference: vi.fn(async (query: string) => {
+  resolveProductReference: vi.fn(async (_restaurantId: string, query: string) => {
     const allProducts = state.catalog.flatMap((cat: any) => cat.products.map((p: any) => ({ ...p, categoryName: cat.name })));
     const match = allProducts.find((p: any) => p.name.toLowerCase() === query.trim().toLowerCase());
     if (!match) {
@@ -500,6 +508,7 @@ import { handleIncomingMessage } from "../src/modules/conversation/conversationS
 function seedIdleConversation() {
   const contact = {
     id: `contact-${state.nextContactId++}`,
+    restaurantId: "local-deployment",
     phone: "573001112233",
     name: "Diego",
     cartRecoveryOptOutAt: null,
@@ -511,6 +520,7 @@ function seedIdleConversation() {
 
   const conversation = {
     id: `conv-${state.nextConversationId++}`,
+    restaurantId: "local-deployment",
     contactId: contact.id,
     status: ConversationStatus.ACTIVE,
     isHandoff: false,
@@ -551,6 +561,7 @@ function seedIdleConversation() {
 
 async function sendMessage(phone: string, text: string, waMessageId: string) {
   await handleIncomingMessage({
+    restaurantId: "local-deployment",
     waMessageId,
     phone,
     name: "Diego",

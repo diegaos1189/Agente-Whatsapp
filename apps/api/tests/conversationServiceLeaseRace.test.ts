@@ -31,6 +31,7 @@ const state = vi.hoisted(() => {
       },
     ],
     settings: {
+      restaurantId: "local-deployment",
       restaurantName: "Pollos Test",
       agentName: "Lina",
       welcomeMessage: "Bienvenido a Pollos Test",
@@ -78,6 +79,11 @@ vi.mock("../src/utils/logger.js", () => ({
 vi.mock("../src/db/prisma.js", () => {
   const contactApi = {
     findUnique: vi.fn(async ({ where }: any) => {
+      // El contacto ahora es unico por (restaurante, telefono), igual que en la base real.
+      if (where.restaurantId_phone) {
+        const { restaurantId, phone } = where.restaurantId_phone;
+        return state.contacts.find((item) => item.restaurantId === restaurantId && item.phone === phone) ?? null;
+      }
       if (where.phone) return state.contacts.find((item) => item.phone === where.phone) ?? null;
       if (where.id) return state.contacts.find((item) => item.id === where.id) ?? null;
       return null;
@@ -91,6 +97,7 @@ vi.mock("../src/db/prisma.js", () => {
       }
       const row = {
         id: `contact-${state.nextContactId++}`,
+        restaurantId: data.restaurantId ?? "local-deployment",
         phone: data.phone,
         name: data.name ?? null,
         cartRecoveryOptOutAt: null,
@@ -120,6 +127,7 @@ vi.mock("../src/db/prisma.js", () => {
     create: vi.fn(async ({ data }: any) => {
       const row = {
         id: `conv-${state.nextConversationId++}`,
+        restaurantId: "local-deployment",
         contactId: data.contactId,
         status: data.status ?? ConversationStatus.ACTIVE,
         isHandoff: false,
@@ -358,7 +366,7 @@ vi.mock("../src/modules/products/productService.js", () => ({
   findCategoryMatch: vi.fn(async () => null),
   applyPromotionDiscount: vi.fn(),
   isPromoActiveToday: vi.fn(() => true),
-  getEffectivePrice: vi.fn(async (_id: string, price: number) => price),
+  getEffectivePrice: vi.fn(async (_restaurantId: string, _id: string, price: number) => price),
   resolveProductReference: vi.fn(async () => null),
   listAllProductsFlat: vi.fn(async () => state.catalog.flatMap((category: any) => category.products)),
 }));
@@ -448,6 +456,7 @@ describe("handleIncomingMessage lease race", () => {
   it("procesa dos webhooks paralelos de sesion nueva con una sola conversacion y una sola bienvenida", async () => {
     await Promise.all([
       handleIncomingMessage({
+        restaurantId: "local-deployment",
         waMessageId: "wamid-1",
         phone: "573001112233",
         name: "Diego",
@@ -457,6 +466,7 @@ describe("handleIncomingMessage lease race", () => {
         providerTimestamp: "2026-08-22T10:00:00-05:00",
       }),
       handleIncomingMessage({
+        restaurantId: "local-deployment",
         waMessageId: "wamid-2",
         phone: "573001112233",
         name: "Diego",

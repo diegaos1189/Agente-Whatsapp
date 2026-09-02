@@ -165,7 +165,12 @@ export async function createPaymentForOrder(params: {
   idempotencyKey: string | null;
   checkoutVersion: number | null;
 }): Promise<{ paymentId: string; paymentUrl: string | null; status: string }> {
-  const settings = await getBusinessSettings();
+  // La moneda del cobro es la del negocio dueño del pedido, no la del deployment.
+  const { restaurantId } = await prisma.order.findUniqueOrThrow({
+    where: { id: params.orderId },
+    select: { restaurantId: true },
+  });
+  const settings = await getBusinessSettings(restaurantId);
   return prisma.$transaction(async (tx) => {
     const order = await tx.order.findUniqueOrThrow({
       where: { id: params.orderId },
@@ -521,13 +526,15 @@ async function resolveWebhookPayment(tx: Prisma.TransactionClient, event: Parsed
   return null;
 }
 
-export async function reconcilePayments(params?: { olderThanMinutes?: number }) {
-  const olderThanMinutes = params?.olderThanMinutes ?? 30;
+export async function reconcilePayments(params: { restaurantId: string; olderThanMinutes?: number }) {
+  const olderThanMinutes = params.olderThanMinutes ?? 30;
   const threshold = new Date(Date.now() - olderThanMinutes * 60_000);
+  // Los pagos no tienen restaurante propio: cuelgan del pedido, que si lo tiene.
   const payments = await prisma.payment.findMany({
     where: {
       status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING, PaymentStatus.AUTHORIZED] },
       createdAt: { lte: threshold },
+      order: { restaurantId: params.restaurantId },
     },
     include: { order: true },
   });
@@ -550,8 +557,9 @@ export async function reconcilePayments(params?: { olderThanMinutes?: number }) 
   return { reviewed: payments.length, issuesCreated: issues.length };
 }
 
-export async function listPayments() {
+export async function listPayments(restaurantId: string) {
   return prisma.payment.findMany({
+    where: { order: { restaurantId } },
     orderBy: { createdAt: "desc" },
     include: {
       refunds: { orderBy: { createdAt: "desc" } },

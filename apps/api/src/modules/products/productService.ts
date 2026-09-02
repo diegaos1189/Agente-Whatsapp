@@ -142,7 +142,7 @@ async function fetchCatalog(restaurantId: string): Promise<CategoryDTO[]> {
   }));
 }
 
-export async function listAllProductsForResolution(restaurantId: string = LOCAL_RESTAURANT_ID): Promise<ProductDTO[]> {
+export async function listAllProductsForResolution(restaurantId: string): Promise<ProductDTO[]> {
   const [products, allProducts] = await Promise.all([
     prisma.product.findMany({
       where: { restaurantId },
@@ -165,7 +165,7 @@ export async function listAllProductsForResolution(restaurantId: string = LOCAL_
  * varias queries identicas a la DB por cada mensaje de WhatsApp. Se invalida apenas
  * el panel admin crea/edita/borra un producto o categoria (ver invalidateCatalogCache).
  */
-export async function listCatalog(restaurantId: string = LOCAL_RESTAURANT_ID): Promise<CategoryDTO[]> {
+export async function listCatalog(restaurantId: string): Promise<CategoryDTO[]> {
   const cached = catalogCache.get(restaurantId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
@@ -222,8 +222,8 @@ export function isPromoActiveToday(promo: PromotionDTO): boolean {
 }
 
 /** Mapa productId -> promo con descuento vigente hoy (fecha + dia de semana + activa). Primera coincidencia gana. */
-async function getTodaysDiscountByProduct(): Promise<Map<string, PromotionDTO>> {
-  const promos = await listActivePromotions();
+async function getTodaysDiscountByProduct(restaurantId: string): Promise<Map<string, PromotionDTO>> {
+  const promos = await listActivePromotions(restaurantId);
   const map = new Map<string, PromotionDTO>();
   for (const p of promos) {
     if (p.productId && p.discountType && p.discountValue != null && isPromoActiveToday(p) && !map.has(p.productId)) {
@@ -234,24 +234,26 @@ async function getTodaysDiscountByProduct(): Promise<Map<string, PromotionDTO>> 
 }
 
 /** Precio real a cobrar por un producto, aplicando la promo del dia si existe. */
-export async function getEffectivePrice(productId: string, basePrice: number): Promise<number> {
-  const map = await getTodaysDiscountByProduct();
+export async function getEffectivePrice(restaurantId: string, productId: string, basePrice: number): Promise<number> {
+  const map = await getTodaysDiscountByProduct(restaurantId);
   const promo = map.get(productId);
   return promo ? applyPromotionDiscount(basePrice, promo) : basePrice;
 }
 
-export async function listAllPromotions(): Promise<PromotionDTO[]> {
+export async function listAllPromotions(restaurantId: string): Promise<PromotionDTO[]> {
   const promos = await prisma.promotion.findMany({
+    where: { restaurantId },
     orderBy: { createdAt: "desc" },
     include: { product: { select: { name: true, price: true } } },
   });
   return promos.map(promotionToDTO);
 }
 
-export async function listActivePromotions(): Promise<PromotionDTO[]> {
+export async function listActivePromotions(restaurantId: string): Promise<PromotionDTO[]> {
   const now = new Date();
   const promos = await prisma.promotion.findMany({
     where: {
+      restaurantId,
       isActive: true,
       OR: [{ startsAt: null }, { startsAt: { lte: now } }],
     },
@@ -543,8 +545,8 @@ export function resolveProductReferenceFromProducts(
   };
 }
 
-export async function resolveProductReference(query: string): Promise<ProductResolutionResult> {
-  const products = await listAllProductsForResolution();
+export async function resolveProductReference(restaurantId: string, query: string): Promise<ProductResolutionResult> {
+  const products = await listAllProductsForResolution(restaurantId);
   const result = resolveProductReferenceFromProducts(query, products);
   if (result.status === "NOT_FOUND" && result.normalizedQuery) {
     logger.info({ event: "UNKNOWN_TERM", query: result.query, normalizedQuery: result.normalizedQuery }, "Termino no resuelto contra catalogo");
@@ -554,14 +556,14 @@ export async function resolveProductReference(query: string): Promise<ProductRes
   return result;
 }
 
-export async function findBestProductMatch(query: string): Promise<ProductDTO | null> {
-  const result = await resolveProductReference(query);
+export async function findBestProductMatch(restaurantId: string, query: string): Promise<ProductDTO | null> {
+  const result = await resolveProductReference(restaurantId, query);
   if (result.status !== "MATCHED" || !result.product?.available) return null;
   return result.product.product;
 }
 
-export async function listAllProductsFlat(): Promise<ProductDTO[]> {
-  const categories = await listCatalog();
+export async function listAllProductsFlat(restaurantId: string): Promise<ProductDTO[]> {
+  const categories = await listCatalog(restaurantId);
   return categories.flatMap((c) => c.products);
 }
 
@@ -578,7 +580,10 @@ const CATEGORY_QUERY_SYNONYMS: Record<string, string[]> = {
  * Busca si un texto libre del cliente se refiere a una categoria completa del menu
  * en vez de un producto especifico.
  */
-export async function findCategoryMatch(query: string): Promise<{ categoryName: string; products: ProductDTO[] } | null> {
+export async function findCategoryMatch(
+  restaurantId: string,
+  query: string,
+): Promise<{ categoryName: string; products: ProductDTO[] } | null> {
   const queryTokens = new Set(meaningfulTokens(query ?? "").map(singularize));
   if (queryTokens.size === 0) return null;
 
@@ -588,7 +593,7 @@ export async function findCategoryMatch(query: string): Promise<{ categoryName: 
     }
   }
 
-  const categories = await listCatalog();
+  const categories = await listCatalog(restaurantId);
   for (const category of categories) {
     const catTokens = meaningfulTokens(category.name).map(singularize);
     if (catTokens.some((token) => [...queryTokens].some((queryToken) => tokensMatch(queryToken, token)))) {

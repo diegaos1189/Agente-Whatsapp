@@ -118,12 +118,12 @@ export async function productRoutes(app: FastifyInstance) {
 
   app.get("/api/promotions", async (request) => {
     requirePermission(request, "promotions");
-    return listActivePromotions();
+    return listActivePromotions(await resolveRestaurantId(request));
   });
 
   app.get("/api/promotions/all", async (request) => {
     requirePermission(request, "promotions");
-    return listAllPromotions();
+    return listAllPromotions(await resolveRestaurantId(request));
   });
 
   app.get("/api/categories", async (request) => {
@@ -251,25 +251,41 @@ export async function productRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.post("/api/promotions", async (request) => {
+  app.post("/api/promotions", async (request, reply) => {
     requirePermission(request, "promotions");
     const body = promotionCreateSchema.parse(request.body);
-    return prisma.promotion.create({
+    const restaurantId = await resolveRestaurantId(request);
+
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: body.productId, restaurantId } });
+      if (!product) return reply.status(400).send({ error: "El producto de la promocion no existe" });
+    }
+
+    const promotion = await prisma.promotion.create({
       data: {
         ...body,
+        restaurantId,
         startsAt: body.startsAt ? new Date(body.startsAt) : null,
         endsAt: body.endsAt ? new Date(body.endsAt) : null,
       },
     });
+    invalidateCatalogCache(restaurantId);
+    return promotion;
   });
 
   app.patch("/api/promotions/:id", async (request, reply) => {
     requirePermission(request, "promotions");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = promotionUpdateSchema.parse(request.body);
+    const restaurantId = await resolveRestaurantId(request);
 
-    const promotion = await prisma.promotion.findUnique({ where: { id } });
+    const promotion = await prisma.promotion.findFirst({ where: { id, restaurantId } });
     if (!promotion) return reply.status(404).send({ error: "Promocion no encontrada" });
+
+    if (body.productId) {
+      const product = await prisma.product.findFirst({ where: { id: body.productId, restaurantId } });
+      if (!product) return reply.status(400).send({ error: "El producto de la promocion no existe" });
+    }
 
     return prisma.promotion.update({
       where: { id },
@@ -284,7 +300,9 @@ export async function productRoutes(app: FastifyInstance) {
   app.delete("/api/promotions/:id", async (request, reply) => {
     requirePermission(request, "promotions");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const promotion = await prisma.promotion.findUnique({ where: { id } });
+    const promotion = await prisma.promotion.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!promotion) return reply.status(404).send({ error: "Promocion no encontrada" });
 
     await prisma.promotion.delete({ where: { id } });
@@ -296,6 +314,7 @@ export async function productRoutes(app: FastifyInstance) {
   app.get("/api/recommendations", async (request) => {
     requirePermission(request, "products");
     const rows = await prisma.productRecommendation.findMany({
+      where: { restaurantId: await resolveRestaurantId(request) },
       orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
       include: {
         sourceProduct: { select: { name: true } },
@@ -320,11 +339,29 @@ export async function productRoutes(app: FastifyInstance) {
   app.post("/api/recommendations", async (request, reply) => {
     requirePermission(request, "products");
     const body = recommendationCreateSchema.parse(request.body);
+    const restaurantId = await resolveRestaurantId(request);
     if (body.recommendedProductId === body.sourceProductId) {
       return reply.status(400).send({ error: "El producto recomendado no puede ser el mismo que el de origen" });
     }
+    // Origen y recomendado tienen que ser del restaurante del request: una regla cruzada
+    // haria que el bot de un negocio ofreciera el producto de otro.
+    const referencedProductIds = [body.sourceProductId, body.recommendedProductId].filter(
+      (value): value is string => Boolean(value),
+    );
+    const ownProducts = await prisma.product.count({
+      where: { id: { in: referencedProductIds }, restaurantId },
+    });
+    if (ownProducts !== new Set(referencedProductIds).size) {
+      return reply.status(400).send({ error: "Uno o mas productos de la regla no existen" });
+    }
+    if (body.sourceCategoryId) {
+      const category = await prisma.category.findFirst({ where: { id: body.sourceCategoryId, restaurantId } });
+      if (!category) return reply.status(400).send({ error: "La categoria de origen no existe" });
+    }
+
     const created = await prisma.productRecommendation.create({
       data: {
+        restaurantId,
         sourceProductId: body.sourceProductId ?? null,
         sourceCategoryId: body.sourceCategoryId ?? null,
         recommendedProductId: body.recommendedProductId,
@@ -340,7 +377,9 @@ export async function productRoutes(app: FastifyInstance) {
     requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = recommendationUpdateSchema.parse(request.body);
-    const rule = await prisma.productRecommendation.findUnique({ where: { id } });
+    const rule = await prisma.productRecommendation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!rule) return reply.status(404).send({ error: "Regla de recomendacion no encontrada" });
 
     return prisma.productRecommendation.update({ where: { id }, data: body });
@@ -349,7 +388,9 @@ export async function productRoutes(app: FastifyInstance) {
   app.delete("/api/recommendations/:id", async (request, reply) => {
     requirePermission(request, "products");
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const rule = await prisma.productRecommendation.findUnique({ where: { id } });
+    const rule = await prisma.productRecommendation.findFirst({
+      where: { id, restaurantId: await resolveRestaurantId(request) },
+    });
     if (!rule) return reply.status(404).send({ error: "Regla de recomendacion no encontrada" });
 
     await prisma.productRecommendation.delete({ where: { id } });

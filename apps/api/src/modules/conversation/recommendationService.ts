@@ -113,14 +113,15 @@ function toRuleInput(row: {
  * sumo un elemento (nunca mas de una oferta por llamada, ver docs/UPSELLING.md).
  */
 export async function getCartRecommendations(params: {
+  restaurantId: string;
   cart: StructuredCartState;
   rejectedProductIds: string[];
 }): Promise<CartRecommendationOffer[]> {
   if (!params.cart.items.length) return [];
 
   const [allProducts, ruleRows] = await Promise.all([
-    listAllProductsForResolution(),
-    prisma.productRecommendation.findMany({ where: { active: true } }),
+    listAllProductsForResolution(params.restaurantId),
+    prisma.productRecommendation.findMany({ where: { restaurantId: params.restaurantId, active: true } }),
   ]);
 
   const cartProductIds = [...new Set(params.cart.items.map((item) => item.productId))];
@@ -134,7 +135,7 @@ export async function getCartRecommendations(params: {
   for (const productId of candidateProductIds) {
     const product = allProducts.find((candidate) => candidate.id === productId);
     if (product) {
-      priceById.set(productId, await getEffectivePrice(productId, product.price));
+      priceById.set(productId, await getEffectivePrice(params.restaurantId, productId, product.price));
     }
   }
 

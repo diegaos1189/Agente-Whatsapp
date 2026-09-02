@@ -283,9 +283,13 @@ class MetaWhatsAppClient implements WhatsAppClient {
  * asi que si el operador actualiza el token/numero desde Configuracion, el siguiente
  * mensaje ya usa las credenciales nuevas sin reiniciar el servidor. getBusinessSettings()
  * ya tiene su propia cache corta (30s), asi que esto no pega a la DB en cada mensaje.
+ *
+ * Cada restaurante manda con SUS credenciales: sin el restaurante correcto, la respuesta a un
+ * cliente saldria desde el numero de otro negocio. Sin argumento usa el restaurante local,
+ * que es el unico caso de un deployment de un solo negocio.
  */
-export async function getWhatsAppClient(): Promise<WhatsAppClient> {
-  const settings = await getBusinessSettings();
+export async function getWhatsAppClient(restaurantId?: string): Promise<WhatsAppClient> {
+  const settings = await getBusinessSettings(restaurantId);
 
   if (settings.whatsappProvider !== "meta") {
     return new MockWhatsAppClient();

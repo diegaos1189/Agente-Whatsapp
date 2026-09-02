@@ -4,7 +4,7 @@ import type { StructuredCartState } from "../src/modules/conversation/structured
 
 const productServiceMocks = vi.hoisted(() => ({
   listCatalog: vi.fn<() => Promise<CategoryDTO[]>>(),
-  getEffectivePrice: vi.fn<(productId: string, basePrice: number) => Promise<number>>(),
+  getEffectivePrice: vi.fn<(restaurantId: string, productId: string, basePrice: number) => Promise<number>>(),
 }));
 
 vi.mock("../src/modules/products/productService.js", () => ({
@@ -51,7 +51,7 @@ function setCatalog(products: ProductDTO[], effectivePrices?: Record<string, num
     })),
   );
 
-  productServiceMocks.getEffectivePrice.mockImplementation(async (productId, basePrice) => effectivePrices?.[productId] ?? basePrice);
+  productServiceMocks.getEffectivePrice.mockImplementation(async (_restaurantId, productId, basePrice) => effectivePrices?.[productId] ?? basePrice);
 }
 
 describe("pricingService", () => {

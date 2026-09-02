@@ -39,6 +39,7 @@ import { validateCheckout } from "../src/modules/orders/checkoutService.js";
 function buildSettings(overrides: Record<string, unknown> = {}) {
   return {
     id: "settings",
+    restaurantId: "local-deployment",
     restaurantName: "Pollos",
     logoUrl: null,
     phone: "3000000000",
@@ -87,7 +88,7 @@ describe("system invariants", () => {
         products: [{ id: "pollo-8", name: "Pollo 8", price: 52000, isAvailable: true }],
       },
     ]);
-    productServiceMocks.getEffectivePrice.mockImplementation(async (_productId: string, basePrice: number) => basePrice);
+    productServiceMocks.getEffectivePrice.mockImplementation(async (_restaurantId: string, _productId: string, basePrice: number) => basePrice);
   });
 
   it("INVARIANTE 2: un waMessageId se procesa maximo una vez", async () => {

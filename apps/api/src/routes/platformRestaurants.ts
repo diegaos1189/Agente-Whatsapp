@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireAdmin } from "../modules/adminUsers/adminAuth.js";
+import { requirePlatformAdmin } from "../modules/adminUsers/adminAuth.js";
 import {
   ensureLocalRestaurantListed,
   ensureRestaurantSettings,
@@ -26,13 +26,13 @@ const restaurantUpdateSchema = restaurantCreateSchema.partial();
  */
 export async function platformRestaurantRoutes(app: FastifyInstance) {
   app.get("/api/platform/restaurants", async (request) => {
-    requireAdmin(request);
+    requirePlatformAdmin(request);
     await ensureLocalRestaurantListed();
     return prisma.platformRestaurant.findMany({ orderBy: { createdAt: "asc" } });
   });
 
   app.post("/api/platform/restaurants", async (request) => {
-    requireAdmin(request);
+    requirePlatformAdmin(request);
     const body = restaurantCreateSchema.parse(request.body);
     const restaurant = await prisma.platformRestaurant.create({
       data: { ...body, slug: await uniqueSlug(body.name) },
@@ -45,7 +45,7 @@ export async function platformRestaurantRoutes(app: FastifyInstance) {
 
   // El panel admin resuelve /<slug> con esta ruta (pagina de entrada de cada restaurante).
   app.get("/api/platform/restaurants/by-slug/:slug", async (request, reply) => {
-    requireAdmin(request);
+    requirePlatformAdmin(request);
     const { slug } = z.object({ slug: z.string() }).parse(request.params);
     const restaurant = await prisma.platformRestaurant.findUnique({ where: { slug } });
     if (!restaurant) return reply.status(404).send({ error: "Restaurante no encontrado" });
@@ -55,7 +55,7 @@ export async function platformRestaurantRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/platform/restaurants/:id", async (request, reply) => {
-    requireAdmin(request);
+    requirePlatformAdmin(request);
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const body = restaurantUpdateSchema.parse(request.body);
     const restaurant = await prisma.platformRestaurant.findUnique({ where: { id } });
@@ -64,7 +64,7 @@ export async function platformRestaurantRoutes(app: FastifyInstance) {
   });
 
   app.delete("/api/platform/restaurants/:id", async (request, reply) => {
-    requireAdmin(request);
+    requirePlatformAdmin(request);
     const { id } = z.object({ id: z.string() }).parse(request.params);
     const restaurant = await prisma.platformRestaurant.findUnique({ where: { id } });
     if (!restaurant) return reply.status(404).send({ error: "Restaurante no encontrado" });
