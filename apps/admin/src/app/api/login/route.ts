@@ -31,11 +31,14 @@ export async function POST(request: NextRequest) {
 
   resetLoginAttempts(ip);
 
+  // El usuario de un restaurante entra directo a su panel (/<slug>/...), no al de la raiz.
   const redirectTo = firstAllowedPath({
     sub: user.id,
     username: user.username,
     role: user.role,
     permissions: user.permissions as PermissionKey[],
+    restaurantId: user.restaurantId ?? null,
+    restaurantSlug: user.restaurantSlug ?? null,
     iat: Date.now(),
   });
   const response = NextResponse.json({ ok: true, redirectTo });

@@ -31,6 +31,9 @@ async function forward(request: NextRequest, params: { path: string[] }) {
             "x-admin-username": session.username,
             "x-admin-role": session.role,
             "x-admin-permissions": session.permissions.join(","),
+            // Sale de la cookie firmada, no de un header del navegador: es lo que ata al
+            // usuario de un restaurante a su restaurante pase lo que pase.
+            ...(session.restaurantId ? { "x-admin-restaurant-id": session.restaurantId } : {}),
           }
         : {}),
       ...(restaurantId ? { [RESTAURANT_HEADER]: restaurantId } : {}),

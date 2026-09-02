@@ -25,13 +25,37 @@ export function slugify(name: string): string {
     .replace(/[^a-z0-9]+/g, "");
 }
 
+/**
+ * Nombres que no pueden ser el slug de un restaurante porque ya son secciones del panel.
+ *
+ * El link publico de un cliente es <panel>/<slug>, asi que un negocio llamado "Orders" con
+ * slug "orders" chocaria con /orders — el panel resuelve el primer segmento comparandolo
+ * contra esta misma lista (ver PANEL_SECTIONS en el admin).
+ */
+const RESERVED_SLUGS = new Set([
+  "metrics",
+  "conversations",
+  "orders",
+  "products",
+  "promotions",
+  "recommendations",
+  "faqs",
+  "kitchen",
+  "facturacion",
+  "capacitacion",
+  "settings",
+  "users",
+  "login",
+  "api",
+]);
+
 /** Si el slug del nombre ya esta tomado (dos negocios con el mismo nombre), numera: delycombos2, delycombos3... */
 export async function uniqueSlug(name: string): Promise<string> {
   const base = slugify(name) || "restaurante";
-  let candidate = base;
+  let candidate = RESERVED_SLUGS.has(base) ? `${base}2` : base;
   for (let suffix = 2; ; suffix++) {
     const taken = await prisma.platformRestaurant.findUnique({ where: { slug: candidate } });
-    if (!taken) return candidate;
+    if (!taken && !RESERVED_SLUGS.has(candidate)) return candidate;
     candidate = `${base}${suffix}`;
   }
 }

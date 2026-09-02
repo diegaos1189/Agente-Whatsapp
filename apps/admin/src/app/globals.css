@@ -872,6 +872,82 @@ button.cta:hover { background: linear-gradient(135deg, #4bcf30, #31a71b); }
   flex-shrink: 0;
 }
 
+/* Logo del restaurante subible desde la barra lateral: el mismo cuadro de 84px, pero
+   clickeable, con estado vacio visible cuando el negocio todavia no cargo su logo. */
+.sidebar-logo-uploader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-logo-button {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  display: block;
+}
+
+.sidebar-logo-button:disabled { cursor: default; opacity: 0.6; }
+
+.sidebar-logo-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 4px 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.sidebar-logo-button:hover .sidebar-logo-overlay,
+.sidebar-logo-button:focus-visible .sidebar-logo-overlay { opacity: 1; }
+
+.sidebar-logo-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.sidebar-logo-button:hover .sidebar-logo-empty {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sidebar-logo-hint {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.sidebar-logo-remove {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sidebar-logo-remove:hover { color: var(--accent); }
+
 .mobile-topbar-logo {
   width: 26px;
   height: 26px;

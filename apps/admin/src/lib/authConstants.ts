@@ -22,6 +22,14 @@ export interface SessionPayload {
   username: string;
   role: AdminRole;
   permissions: PermissionKey[];
+  /**
+   * Restaurante al que pertenece el usuario, o null si es de la plataforma (el dueño del
+   * producto). Va firmado dentro de la sesion, no en un header suelto: es lo que decide a
+   * que panel entra y de cual no puede salir.
+   */
+  restaurantId?: string | null;
+  /** Slug del restaurante del usuario, para armar los links de su panel sin ir a la API. */
+  restaurantSlug?: string | null;
   iat: number;
 }
 
@@ -67,8 +75,60 @@ export const ROUTE_PERMISSIONS: Array<{ prefix: string; permission: PermissionKe
 /** Rutas que solo puede ver/editar el rol ADMIN, sin excepcion. */
 export const ADMIN_ONLY_PREFIXES = ["/settings", "/users", "/super-admin"];
 
+/**
+ * Primer segmento de una URL del panel que NO es un slug de restaurante.
+ *
+ * El middleware corre en Edge y no puede consultar la base, asi que no puede preguntar si
+ * "delycombos" es un restaurante. Lo resuelve al reves: la lista de secciones es fija y esta
+ * en el codigo, asi que todo primer segmento que no sea una de estas es un slug. Por eso
+ * uniqueSlug() en la API las trata como reservadas — un negocio llamado "Pedidos" no puede
+ * quedarse con el slug "orders".
+ */
+export const PANEL_SECTIONS = [
+  "metrics",
+  "conversations",
+  "orders",
+  "products",
+  "promotions",
+  "recommendations",
+  "faqs",
+  "kitchen",
+  "facturacion",
+  "capacitacion",
+  "settings",
+  "users",
+  "super-admin",
+  "no-access",
+  "login",
+  "api",
+] as const;
+
+/**
+ * Seccion del panel a la que apunta una ruta, sin importar si viene del panel de la raiz
+ * (/orders) o del de un restaurante (/delycombos/orders).
+ *
+ * El middleware lo necesita porque sus reglas son por seccion: con el slug adelante, un
+ * startsWith("/orders") deja de coincidir y un STAFF sin permisos entraria a cualquier
+ * seccion del panel de un restaurante.
+ */
+export function sectionPathOf(pathname: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const first = segments[0];
+  if (!first) return "/";
+  if ((PANEL_SECTIONS as readonly string[]).includes(first)) return pathname;
+  return `/${segments.slice(1).join("/")}`;
+}
+
+/** Slug del restaurante que se esta abriendo en esta ruta, o null si es el panel de la raiz. */
+export function restaurantSlugOf(pathname: string): string | null {
+  const first = pathname.split("/").filter(Boolean)[0];
+  if (!first) return null;
+  return (PANEL_SECTIONS as readonly string[]).includes(first) ? null : first;
+}
+
 export function firstAllowedPath(payload: SessionPayload): string {
-  if (payload.role === ADMIN_ROLE) return "/metrics";
+  const base = payload.restaurantSlug ? `/${payload.restaurantSlug}` : "";
+  if (payload.role === ADMIN_ROLE) return `${base}/metrics`;
   const match = ROUTE_PERMISSIONS.find((r) => payload.permissions.includes(r.permission));
-  return match?.prefix ?? "/no-access";
+  return match ? `${base}${match.prefix}` : `${base}/no-access`;
 }

@@ -12,6 +12,12 @@ export interface AdminUserDTO {
   permissions: string[];
   /** Restaurante al que pertenece, o null si es un usuario de la plataforma. */
   restaurantId: string | null;
+  /**
+   * Slug del restaurante, para que el panel pueda mandar al usuario directo a /<slug> apenas
+   * entra. Viene en la respuesta del login porque en ese momento todavia no hay sesion con
+   * la cual consultar las rutas de plataforma.
+   */
+  restaurantSlug: string | null;
   createdAt: string;
 }
 
@@ -40,6 +46,7 @@ function toDTO(user: {
   role: AdminRole;
   permissions: string[];
   restaurantId: string | null;
+  restaurant?: { slug: string } | null;
   createdAt: Date;
 }): AdminUserDTO {
   return {
@@ -48,6 +55,7 @@ function toDTO(user: {
     role: user.role,
     permissions: user.role === ADMIN_ROLE ? [...PERMISSION_KEYS] : user.permissions,
     restaurantId: user.restaurantId,
+    restaurantSlug: user.restaurant?.slug ?? null,
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -74,7 +82,10 @@ export async function ensureBootstrapAdmin(username: string, password: string): 
  * distintos serian indistinguibles al entrar.
  */
 export async function login(username: string, password: string): Promise<AdminUserDTO | null> {
-  const user = await prisma.adminUser.findUnique({ where: { username } });
+  const user = await prisma.adminUser.findUnique({
+    where: { username },
+    include: { restaurant: { select: { slug: true } } },
+  });
   if (!user) return null;
   if (!verifyPassword(password, user.passwordHash)) return null;
   return toDTO({ ...user, role: normalizeRole(user.role) });

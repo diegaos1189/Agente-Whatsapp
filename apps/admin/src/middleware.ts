@@ -8,6 +8,9 @@ import {
   ADMIN_ONLY_PREFIXES,
   ADMIN_ROLE,
   firstAllowedPath,
+  restaurantSlugOf,
+  sectionPathOf,
+  type SessionPayload,
 } from "@/lib/authConstants";
 
 // Comparacion en tiempo constante (Edge no tiene crypto.timingSafeEqual): recorre siempre
@@ -31,6 +34,28 @@ async function hmacHex(secret: string, data: string): Promise<string> {
   return Array.from(new Uint8Array(signature))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * Un usuario atado a un restaurante solo existe dentro de su panel.
+ *
+ * Devuelve la URL a la que hay que mandarlo si se salio (el panel de otro cliente, las
+ * pantallas de la plataforma, o el panel de la raiz, que es el del restaurante de este
+ * deployment), o null si donde esta es suyo. Es la contraparte visible del corte que ya hace
+ * la API: aca se evita la pantalla en blanco, alla se evita la fuga de datos.
+ */
+function outOfScopeRedirect(payload: SessionPayload, pathname: string): string | null {
+  if (!payload.restaurantId) return null;
+
+  const ownSlug = payload.restaurantSlug ?? null;
+  const slugInPath = restaurantSlugOf(pathname);
+
+  // Sin slug propio (restaurante recien renombrado, sesion vieja) no se puede saber cual es
+  // su panel: se lo deja pasar y la API igual le acota los datos a su restaurante.
+  if (!ownSlug) return null;
+
+  if (slugInPath === ownSlug) return null;
+  return firstAllowedPath(payload);
 }
 
 export async function middleware(request: NextRequest) {
@@ -75,13 +100,25 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  if (ADMIN_ONLY_PREFIXES.some((prefix) => path.startsWith(prefix)) && payload.role !== ADMIN_ROLE) {
+  // Primero el limite de restaurante: un usuario de un negocio no tiene por que llegar
+  // siquiera a la evaluacion de permisos del panel de otro.
+  const outOfScope = outOfScopeRedirect(payload, path);
+  if (outOfScope && outOfScope !== path) {
+    return NextResponse.redirect(new URL(outOfScope, request.url));
+  }
+
+  // Las reglas son por seccion, y la seccion es la misma se entre por /orders o por
+  // /delycombos/orders.
+  const section = sectionPathOf(path);
+
+  if (ADMIN_ONLY_PREFIXES.some((prefix) => section.startsWith(prefix)) && payload.role !== ADMIN_ROLE) {
     return NextResponse.redirect(new URL(firstAllowedPath(payload), request.url));
   }
 
-  const routeRule = ROUTE_PERMISSIONS.find((r) => path.startsWith(r.prefix));
+  const routeRule = ROUTE_PERMISSIONS.find((r) => section.startsWith(r.prefix));
   if (routeRule && !hasPermission(payload, routeRule.permission)) {
-    return NextResponse.redirect(new URL("/no-access", request.url));
+    const base = payload.restaurantSlug ? `/${payload.restaurantSlug}` : "";
+    return NextResponse.redirect(new URL(`${base}/no-access`, request.url));
   }
 
   return NextResponse.next();

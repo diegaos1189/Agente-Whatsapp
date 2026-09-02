@@ -63,35 +63,59 @@ Ver `apps/api/prisma/schema.prisma`. Decisiones relevantes:
 - `orders.status` es un string libre validado por el enum compartido `OrderStatus`, no un enum nativo de Postgres, para poder agregar estados sin migracion destructiva.
 - `business_settings` tiene una fila por restaurante (`restaurantId` unico) con toda la configuracion editable desde el panel: horario (`openingHours` JSON por dia), costo de domicilio, tiempo estimado, mensajes de bienvenida/fuera de horario. Nada de esto esta hardcodeado en el codigo del agente.
 
-## Multi-tenant (en curso, por fases)
+## Multi-tenant
 
 El sistema nacio single-tenant: una base de datos por cliente, un deployment por restaurante.
-`platform_restaurants` era solo un directorio de clientes. Se esta migrando a que una sola base
-atienda a varios restaurantes, por fases, para no mover las ~220 queries de golpe.
+`platform_restaurants` era solo un directorio de clientes. Hoy una sola base atiende a varios
+restaurantes: cada uno con su catalogo, su configuracion, sus pedidos, sus chats y sus usuarios.
 
-**Como se resuelve el restaurante de un request** (`modules/platform/restaurantContext.ts`):
-el panel manda el header `x-restaurant-id` cuando el usuario abre `/<slug>/...`; sin header se
-asume `local-deployment`, el restaurante que ya corria en este deployment. Ese default es lo que
-mantiene funcionando sin cambios el panel de siempre (`/products`, `/settings`) y el bot de
-WhatsApp, que todavia no sabe a que restaurante corresponde cada numero.
+**Tres cortes distintos resuelven el restaurante de un request** (`modules/platform/restaurantContext.ts`):
+
+1. **El panel** manda el header `x-restaurant-id` con el restaurante que el usuario abrio
+   (`/<slug>/orders`). Sin header se asume `local-deployment`, el restaurante que ya corria en
+   este deployment — ese default es lo que mantiene el panel de la raiz (`/products`, `/orders`)
+   funcionando igual que siempre.
+2. **El usuario** manda `x-admin-restaurant-id`, derivado de la cookie de sesion firmada. Si el
+   usuario pertenece a un restaurante, ese gana sobre el header del punto 1 y un header que
+   apunte a otro se rechaza con 403. El header del navegador nunca alcanza por si solo.
+3. **El bot** resuelve el restaurante por el `phone_number_id` del payload de Meta: el numero
+   que recibio el mensaje dice de que negocio es el chat. Cada restaurante guarda sus propias
+   credenciales de WhatsApp en Configuracion y responde con las suyas.
 
 | Fase | Alcance | Estado |
 | --- | --- | --- |
-| 1 | `business_settings`, `categories`, `products` acotados por `restaurantId`. Panel `/<slug>/products` y `/<slug>/settings`. | Hecho |
-| 2 | Pedidos y cocina (`orders`, `order_items`, `payments`). | Pendiente |
-| 3 | Conversaciones, contactos y ruteo del webhook por numero de WhatsApp -> restaurante. | Pendiente |
-| 4 | Usuarios y sesion atada a un restaurante (hoy el panel `/<slug>` es solo ADMIN de la plataforma). | Pendiente |
+| 1 | `business_settings`, `categories`, `products` acotados por `restaurantId`. | Hecho |
+| 2 | `contacts`, `conversations`, `orders`, `promotions`, `faqs`, `product_recommendations`; ruteo del webhook por numero; usuarios atados a un restaurante; las 12 secciones del panel `/<slug>`. | Hecho |
 
-Consecuencias mientras las fases 2-4 no esten:
+Detalles que conviene tener presentes al tocar esto:
 
-- En el panel `/<slug>` solo Productos y Configuracion son links reales; las demas secciones se
-  muestran marcadas como "Pronto" a proposito, porque sus datos siguen siendo los del
-  restaurante local y linkearlas mostraria pedidos y conversaciones de otro negocio.
-- `promotions` y `product_recommendations` cuelgan de productos pero todavia no tienen
-  `restaurantId` propio: no estan expuestas en el panel por restaurante.
-- El bot atiende unicamente al restaurante local, sin importar cuantos haya dados de alta.
-- Las caches de catalogo y configuracion estan indexadas por restaurante (`Map`), no globales:
-  con una sola entrada, un negocio veria los datos de otro durante los 30s de TTL.
+- **El contacto es por (restaurante, telefono)**, no por telefono: el mismo celular que le
+  escribe a dos negocios de la plataforma son dos clientes distintos, con historiales separados.
+- **`BusinessSettingsDTO` lleva `restaurantId` adentro.** El objeto `settings` ya viajaba por
+  todo el flujo del bot, asi que es lo que permite que cada paso (catalogo, precios, promociones,
+  envio) sepa a quien atiende sin pasar el id a mano por cada firma. Al agregar un paso nuevo,
+  usar `settings.restaurantId` en vez de agregar otro parametro.
+- **`productService` no tiene defaults.** `listCatalog`, `resolveProductReference`,
+  `getEffectivePrice` y compañia exigen `restaurantId`: la idea es que el compilador marque una
+  fuga en vez de que caiga al restaurante local en silencio.
+- **Los schedulers recorren restaurante por restaurante** (archivo diario, alertas operativas,
+  recuperacion de carrito, reactivacion), cada uno con su hora y su zona horaria. Las marcas de
+  "ya corrio hoy" son `Map` por restaurante, no variables sueltas.
+- **Las caches de catalogo y configuracion estan indexadas por restaurante** (`Map`): con una
+  sola entrada, un negocio veria los datos de otro durante los 30s de TTL.
+- **Pagos, handoffs y eventos de pedido no llevan `restaurantId` propio**: se acotan por su
+  pedido o su conversacion, que si lo tienen.
+- **Una sola copia de cada pantalla.** Cada seccion del panel vive en `(dashboard)/<seccion>/View.tsx`
+  y recibe `restaurantId` + `basePath`; `page.tsx` (raiz) y `[restaurantSlug]/<seccion>/page.tsx`
+  son envoltorios de tres lineas sobre esa vista.
+- **Los nombres de seccion son slugs reservados** (`orders`, `metrics`, ...): el middleware corre
+  en Edge y no puede consultar la base, asi que decide si el primer segmento de la URL es una
+  seccion o un slug comparandolo contra la lista fija `PANEL_SECTIONS`. `uniqueSlug()` en la API
+  respeta la misma lista.
+
+El aislamiento esta cubierto por dos tests de regresion que corren las queries reales contra un
+prisma en memoria: `catalogTenantIsolation.test.ts` (catalogo) y `operationsTenantIsolation.test.ts`
+(pedidos, conversaciones, FAQs y el corte por usuario).
 
 ## Simplificaciones conocidas del MVP (documentadas, no accidentales)
 

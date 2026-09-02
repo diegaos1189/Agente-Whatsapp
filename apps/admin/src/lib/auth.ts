@@ -22,17 +22,25 @@ export function assertSessionSecretAvailable(): void {
   }
 }
 
-interface LoginResult {
+/**
+ * Lo que devuelve el login de la API. Trae el restaurante del usuario (id + slug) porque en
+ * ese momento todavia no hay sesion con la cual consultarlo aparte, y el slug es lo que
+ * decide a que panel entra.
+ */
+export interface SessionUser {
   id: string;
   username: string;
   role: "ADMIN" | "STAFF";
   permissions: string[];
+  /** null = usuario de la plataforma (el dueño del producto). */
+  restaurantId?: string | null;
+  restaurantSlug?: string | null;
 }
 
 /** Verifica usuario/contrasena contra la tabla admin_users del backend. */
-export async function checkCredentials(username: string, password: string): Promise<LoginResult | null> {
+export async function checkCredentials(username: string, password: string): Promise<SessionUser | null> {
   try {
-    return await apiServerFetch<LoginResult>("/api/admin-users/login", {
+    return await apiServerFetch<SessionUser>("/api/admin-users/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     });
@@ -42,13 +50,15 @@ export async function checkCredentials(username: string, password: string): Prom
 }
 
 /** Firma un token de sesion (payload + HMAC-SHA256) que la Edge middleware puede re-verificar sin node:crypto. */
-export function signSessionToken(user: LoginResult): string {
+export function signSessionToken(user: SessionUser): string {
   assertSessionSecretAvailable();
   const payload: SessionPayload = {
     sub: user.id,
     username: user.username,
     role: user.role,
     permissions: user.permissions as PermissionKey[],
+    restaurantId: user.restaurantId ?? null,
+    restaurantSlug: user.restaurantSlug ?? null,
     iat: Date.now(),
   };
   const payloadB64 = encodeSessionPayload(payload);

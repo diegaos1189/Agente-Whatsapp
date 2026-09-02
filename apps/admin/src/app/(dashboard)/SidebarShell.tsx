@@ -7,6 +7,7 @@ export function SidebarShell({
   title,
   logoUrl,
   logoVariant = "square",
+  logoSlot,
   children,
   footer,
 }: {
@@ -14,6 +15,8 @@ export function SidebarShell({
   logoUrl?: string | null;
   /** "square": logo del negocio grande y centrado. "wordmark": marca pequeña alineada a la izquierda. */
   logoVariant?: "square" | "wordmark";
+  /** Reemplaza la imagen del logo en la barra lateral (ej: el logo subible del panel de un cliente). */
+  logoSlot?: ReactNode;
   children: ReactNode;
   footer: ReactNode;
 }) {
@@ -53,7 +56,7 @@ export function SidebarShell({
             minWidth: 0,
           }}
         >
-          {logoUrl && <img src={logoUrl} alt="" className={isWordmark ? "sidebar-logo-wordmark" : "sidebar-logo"} />}
+          {logoSlot ?? (logoUrl && <img src={logoUrl} alt="" className={isWordmark ? "sidebar-logo-wordmark" : "sidebar-logo"} />)}
           <h1
             style={{
               margin: 0,
